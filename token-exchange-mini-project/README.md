@@ -8,11 +8,11 @@ Build two ERC20 contracts: RareCoin and SkillsCoin (you can change the name if y
 
 Here is the workflow
 
-mint() SkillsCoin to yourself
-SkillsCoin.approve(address rareCoinAddress, uint256 yourBalanceOfSkillsCoin) RareCoin to take coins from you.
-RareCoin.trade() This will cause RareCoin to SkillsCoin.transferFrom(address you, address RareCoin, uint256 yourBalanceOfSkillsCoin) Remember, RareCoin can know its own address with address(this)
-RareCoin.balanceOf(address you) should return the amount of coin you originally minted for SkillsCoin.
-Remember ERC20 tokens(aka contract) can own other ERC20 tokens. So when you call RareCoin.trade(), it should call SkillsCoin.transferFrom and transfer your SkillsCoin to itself, I.e. address(this).
+- mint() SkillsCoin to yourself
+- SkillsCoin.approve(address rareCoinAddress, uint256 yourBalanceOfSkillsCoin) RareCoin to take coins from you.
+- RareCoin.trade() This will cause RareCoin to SkillsCoin.transferFrom(address you, address RareCoin, uint256 yourBalanceOfSkillsCoin) Remember, RareCoin can know its own address with address(this)
+- RareCoin.balanceOf(address you) should return the amount of coin you originally minted for SkillsCoin.
+- Remember ERC20 tokens(aka contract) can own other ERC20 tokens. So when you call RareCoin.trade(), it should call SkillsCoin.transferFrom and transfer your SkillsCoin to itself, I.e. address(this).
 
 If you have the SkillsCoin address stored, it would look something like this
 
@@ -36,3 +36,16 @@ function trade(uint256 amount)
 }
 ```
 
+## Usage
+
+### Install
+
+```shell
+$ make install
+```
+
+### Test
+
+```shell
+$ make test
+```
