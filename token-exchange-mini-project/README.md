@@ -1,66 +1,38 @@
-## Foundry
+## Token Exchange mini project
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+URL: https://www.rareskills.io/learn-solidity/mini-project
 
-Foundry consists of:
+Challenge:
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+Build two ERC20 contracts: RareCoin and SkillsCoin (you can change the name if you like). Anyone can mint SkillsCoin, but the only way to obtain RareCoin is to send SkillsCoin to the RareCoin contract. You’ll need to remove the restriction that only the owner can mint SkillsCoin.
 
-## Documentation
+Here is the workflow
 
-https://book.getfoundry.sh/
+mint() SkillsCoin to yourself
+SkillsCoin.approve(address rareCoinAddress, uint256 yourBalanceOfSkillsCoin) RareCoin to take coins from you.
+RareCoin.trade() This will cause RareCoin to SkillsCoin.transferFrom(address you, address RareCoin, uint256 yourBalanceOfSkillsCoin) Remember, RareCoin can know its own address with address(this)
+RareCoin.balanceOf(address you) should return the amount of coin you originally minted for SkillsCoin.
+Remember ERC20 tokens(aka contract) can own other ERC20 tokens. So when you call RareCoin.trade(), it should call SkillsCoin.transferFrom and transfer your SkillsCoin to itself, I.e. address(this).
 
-## Usage
+If you have the SkillsCoin address stored, it would look something like this
 
-### Build
-
-```shell
-$ forge build
+``` solidity
+function trade(uint256 amount) 
+    public {
+        // some code
+        // you can pass the address of the deployed SkillsCoin contract as a parameter 
+        // to the constructor of the RareCoin contract as 'source'
+        (bool ok, bytes memory result) = source.call(
+            abi.encodeWithSignature(
+                "transferFrom(address,address,uint256)", 
+                msg.sender, 
+                address(this), 
+                amount
+            )
+        );
+        // this will fail if there is insufficient approval or balance
+        require(ok, "call failed");
+        // more code
+}
 ```
 
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
