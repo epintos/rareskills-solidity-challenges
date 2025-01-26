@@ -3,33 +3,41 @@
 pragma solidity ^0.8.28;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { Test, console2 } from "forge-std/Test.sol";
 
 /**
  * @title TokenVestingContract
  * @author Esteban Pintos
- * @notice Contract that allows a payer to create a vesting agreement with a user. The payer deposits ERC20 tokens that
- * can be withdraw by the user with a specific rate.
+ * @notice Contract that allows a payer to create a vesting agreement with a user. The payer deposits a ERC20 token that
+ * can be withdrawn by the user.
+ * @notice The payer specifies when all the tokens can be withdrawn by the user and the user can withdraw the vested
+ * tokens every day as long as there is at least 1 Wei to withdraw.
+ * @notice Contract supports only one agreement per payer and user.
  */
 contract TokenVestingContract {
     // ERRORS
     error TokenVestingContract__AmountCannotBeZero();
     error TokenVestingContract__UserAlreadyHasAgreement();
-    error TokenVestingContract__DepositTransferFailed();
+    error TokenVestingContract__TransferFailed();
+    error TokenVestingContract__AddressCanotBeZero();
+    error TokenVestingContract__UserDoesNotHaveAgreement();
+    error TokenVestingContract__NotEnoughtTimeHasPassedToWithdraw();
 
     // STORE VARIABLES
     mapping(address payer => mapping(address user => VestingAgreement agreement)) public s_vestingAgreements;
 
     // TYPES
     struct VestingAgreement {
-        uint256 initialTotalTokens;
-        uint256 tokensLeftToWithdraw;
-        uint256 lastWithdraw;
-        uint256 withdrawRate; // User can only withdraw 1/withdrawRate tokens over the course of withdrawRate days.
+        uint256 initialTotalTokensInWei;
+        uint256 tokensWithdrawnInWei;
+        uint256 startTimestamp;
+        uint256 vestingDays; // Days that need to pass to withdraw all the tokens
         address token;
     }
 
     // EVENTS
-    event Deposit(address indexed payer, address indexed user, uint256 amount, uint256 withdrawRate);
+    event Deposit(address indexed payer, address indexed user, uint256 amountDeposited, uint256 withdrawRate);
+    event Withdraw(address indexed payer, address indexed user, uint256 amountWithdraw, uint256 tokensLeftToWithdraw);
 
     modifier notZeroAmount(uint256 amount) {
         if (amount == 0) {
@@ -38,45 +46,114 @@ contract TokenVestingContract {
         _;
     }
 
+    modifier tokenAddressCannotBeZero(address token) {
+        if (token == address(0)) {
+            revert TokenVestingContract__AddressCanotBeZero();
+        }
+        _;
+    }
+
     /**
-     * @notice Deposit ERC20 tokens to create a vesting agreement with a user.
+     * @notice Deposit ERC20 token to create a vesting agreement with a user.
      * @notice The payer and the user can have only one agreement at a time
      * @param token ERC20 token address
      * @param to User address
-     * @param amount Amount of tokens to deposit
-     * @param withdrawRate Amount of tokens that can be withdrawn per day
+     * @param amountInWei Amount of tokens to deposit
+     * @param vestingDays Days that need to pass to withdraw all the tokens
      * @dev The user must approve the contract to spend the tokens before calling this function.
      */
-    function deposit(address token, address to, uint256 amount, uint256 withdrawRate) external notZeroAmount(amount) {
+    function deposit(
+        address token,
+        address to,
+        uint256 amountInWei,
+        uint256 vestingDays
+    )
+        external
+        notZeroAmount(amountInWei)
+        tokenAddressCannotBeZero(token)
+    {
         if (s_vestingAgreements[msg.sender][to].token != address(0)) {
             revert TokenVestingContract__UserAlreadyHasAgreement();
         }
         s_vestingAgreements[msg.sender][to] = VestingAgreement({
-            initialTotalTokens: amount,
-            tokensLeftToWithdraw: amount,
-            lastWithdraw: block.timestamp,
-            withdrawRate: withdrawRate,
+            initialTotalTokensInWei: amountInWei,
+            tokensWithdrawnInWei: 0,
+            startTimestamp: block.timestamp,
+            vestingDays: vestingDays,
             token: token
         });
-        (bool success) = ERC20(token).transferFrom(msg.sender, address(this), amount);
+        console2.log("token", token);
+        (bool success) = ERC20(token).transferFrom(msg.sender, address(this), amountInWei);
         if (!success) {
-            revert TokenVestingContract__DepositTransferFailed();
+            revert TokenVestingContract__TransferFailed();
         }
-        emit Deposit(msg.sender, to, amount, withdrawRate);
+        emit Deposit(msg.sender, to, amountInWei, vestingDays);
     }
 
     /**
-     * @notice Withdraw tokens if an agreement between the user and a payer exists.
-     * @param from Payer address
-     * @param token ERC20 token address
-     * @param amount Amount of tokens to withdraw
+     * @notice Withdraw vested tokens if an agreement between the user and a payer exists.
+     * @notice If all the tokens are withdrawn, the agreement is deleted.
+     * @notice Will revert if not enought time has passed to withdraw at least one Wei in tokens.
+     * @param payer Payer address
      */
-    function withdraw(address from, address token, uint256 amount) external notZeroAmount(amount) {
-        // Check if the user has an agreement with amount left
-        // Check amount it can be withdrawn
-        // Transfer tokens to the user
-        // If no amount left, delete the agreement
-        // emit event
+    function withdraw(address payer) external {
+        VestingAgreement memory agreement = s_vestingAgreements[payer][msg.sender];
+        if (agreement.token == address(0)) {
+            revert TokenVestingContract__UserDoesNotHaveAgreement();
+        }
+
+        uint256 tokensToWithdraw = _calculateTokensToWithdraw(agreement);
+
+        if (tokensToWithdraw == 0) {
+            revert TokenVestingContract__NotEnoughtTimeHasPassedToWithdraw();
+        }
+
+        uint256 tokensLeftToWithdraw = agreement.initialTotalTokensInWei - tokensToWithdraw;
+        if (tokensLeftToWithdraw == 0) {
+            delete s_vestingAgreements[payer][msg.sender];
+        } else {
+            s_vestingAgreements[payer][msg.sender].tokensWithdrawnInWei = tokensToWithdraw;
+        }
+
+        (bool success) = ERC20(agreement.token).transfer(msg.sender, tokensToWithdraw);
+        if (!success) {
+            revert TokenVestingContract__TransferFailed();
+        }
+        emit Withdraw(payer, msg.sender, tokensToWithdraw, tokensLeftToWithdraw);
+    }
+
+    /**
+     * @notice Calculates the amount of token that have been vested since the last withdraw
+     * @param agreement Vesting agreement between payer and user
+     * @return amountToWithdrawInWei Amount of tokens that have been vested since the last withdraw
+     */
+    function _calculateTokensToWithdraw(VestingAgreement memory agreement)
+        internal
+        view
+        returns (uint256 amountToWithdrawInWei)
+    {
+        // Example:
+        // initialTotalTokensInWei = 10e18
+        // vestingDays = 10
+        // tokensWithdrawnInWei = 2e18 (Withdrawn on the second day)
+        // elapsedTimeInDays = 5 days ago
+        // tokensVestedSinceStart = (10e18 * 5) / 10 = 5e18
+        // amountToWithdrawInWei = 5e18 - 2e18 = 3e18
+        uint256 elapsedTimeInDays = (block.timestamp - agreement.startTimestamp) / 1 days;
+        uint256 tokensVestedSinceStart = (agreement.initialTotalTokensInWei * elapsedTimeInDays) / agreement.vestingDays;
+        amountToWithdrawInWei = tokensVestedSinceStart - agreement.tokensWithdrawnInWei;
+    }
+
+    /**
+     * @notice Get the amount of tokens that have been vested since the last time the user did a withdraw.
+     * @param payer Payer address
+     * @param user User address
+     */
+    function getTokensToWithdraw(address payer, address user) external view returns (uint256) {
+        if (s_vestingAgreements[payer][user].token == address(0)) {
+            revert TokenVestingContract__UserDoesNotHaveAgreement();
+        }
+        return _calculateTokensToWithdraw(s_vestingAgreements[payer][user]);
     }
 
     function getAgreement(address payer, address user) external view returns (VestingAgreement memory) {
