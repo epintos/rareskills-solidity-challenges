@@ -5,13 +5,10 @@ pragma solidity ^0.8.28;
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
 contract NFTSwappingContract {
-    // ERRORS
+    /// ERRORS
+    error NFTSwappingContract__CannotBeZeroAddress();
 
-    // STATE VARIABLES
-    uint256 private s_swapQuantity = 1;
-    mapping(uint256 swapId => Swap) private s_swaps;
-
-    // TYPES
+    /// TYPE DECLARATIONS
     enum SwapState {
         CREATED, // Swap created. Deposits are pending
         DEPOSIT_COMPLETED, // Both NFTs are deposited
@@ -20,7 +17,7 @@ contract NFTSwappingContract {
 
     }
 
-    struct Swap {
+    struct SwapAgreement {
         address firstNFTAddress;
         uint256 firstNFTTokenId;
         address secondNFTAddress;
@@ -29,9 +26,25 @@ contract NFTSwappingContract {
         address secondNFTOwner;
         bool firstNFTDeposited;
         bool secondNFTDeposited;
+        SwapState state;
     }
 
-    // FUNCTIONS
+    /// STATE VARIABLES
+    uint256 private s_swapQuantity = 0;
+    mapping(uint256 swapId => SwapAgreement) private s_swaps;
+
+    /// EVENTS
+    event SwapAgreementCreated(uint256 indexed swapId, address firstNFTOwner);
+
+    /// MODIFIERS
+    modifier cannotBeZeroAddress(address _address) {
+        if (_address == address(0)) {
+            revert NFTSwappingContract__CannotBeZeroAddress();
+        }
+        _;
+    }
+
+    /// FUNCTIONS
 
     // EXTERNAL FUNCTIONS
 
@@ -50,8 +63,25 @@ contract NFTSwappingContract {
         uint256 secondNFTTokenId
     )
         external
+        cannotBeZeroAddress(firstNFTAddress)
+        cannotBeZeroAddress(secondNFTAddress)
         returns (uint256 swapId)
-    { }
+    {
+        swapId = s_swapQuantity;
+        s_swaps[swapId] = SwapAgreement({
+            firstNFTAddress: firstNFTAddress,
+            firstNFTTokenId: firstNFTTokenId,
+            secondNFTAddress: secondNFTAddress,
+            secondNFTTokenId: secondNFTTokenId,
+            firstNFTOwner: msg.sender,
+            secondNFTOwner: address(0),
+            firstNFTDeposited: false,
+            secondNFTDeposited: false,
+            state: SwapState.CREATED
+        });
+        s_swapQuantity++;
+        emit SwapAgreementCreated(swapId, msg.sender);
+    }
 
     /**
      * @notice Deposits a NFT into the swap agreement.
@@ -83,10 +113,13 @@ contract NFTSwappingContract {
      * @param swapId The ID of the swap agreement.
      * @return swap The swap agreement details.
      */
-    function getSwapAgreement(uint256 swapId) external view returns (Swap memory) {
+    function getSwapAgreement(uint256 swapId) external view returns (SwapAgreement memory) {
         return s_swaps[swapId];
     }
 
+    /**
+     * @return swapQuantity The quantity of swap agreements created.
+     */
     function getSwapQuantity() external view returns (uint256) {
         return s_swapQuantity;
     }
