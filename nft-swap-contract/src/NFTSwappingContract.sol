@@ -6,6 +6,12 @@ import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { Test, console2 } from "forge-std/Test.sol";
 
+/**
+ * @title NFTSwappingContract
+ * @author Esteban Pintos
+ * @notice Contract that allows two parties to swap NFTs.
+ * @notice If the swap is not completed, the NFTs can be withdrawn by the owner.
+ */
 contract NFTSwappingContract is IERC721Receiver {
     /// ERRORS
     error NFTSwappingContract__CannotBeZeroAddress();
