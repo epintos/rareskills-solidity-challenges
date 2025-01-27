@@ -14,13 +14,14 @@ contract NFTSwappingContract is IERC721Receiver {
     error NFTSwappingContract__ReceiverIsNotCurrentContract();
     error NFTSwappingContract__NFTCannotBeWithdrawWhileSwapping();
     error NFTSwappingContract__NFTNotDeposited();
+    error NFTSwappingContract__DepositsArePending();
+    error NFTSwappingContract__UserIsNotPartOfTheSwap();
 
     /// TYPE DECLARATIONS
     enum SwapState {
         NONE, // Placeholder for non existing Swap
         CREATED, // Swap created. Deposits are pending
-        DEPOSITED, // Both NFTs are deposited
-        IN_PROGRESS // One of the users started the swap
+        DEPOSITED // Both NFTs are deposited
 
     }
 
@@ -44,6 +45,7 @@ contract NFTSwappingContract is IERC721Receiver {
     event SwapAgreementCreated(uint256 indexed swapId, address indexed firstNFTOwner);
     event Deposited(uint256 indexed swapId, address indexed owner, address nftAddress, uint256 nftTokenId);
     event Withdrawn(uint256 indexed swapId, address indexed owner);
+    event SwapComplete(uint256 indexed swapId, address indexed user);
 
     /// MODIFIERS
     modifier cannotBeZeroAddress(address _address) {
@@ -133,21 +135,39 @@ contract NFTSwappingContract is IERC721Receiver {
      * @dev The NFTs will be transfered from the current contract to the other parties.
      * @param swapId The ID of the swap agreement.
      */
-    function swap(uint256 swapId) external { }
+    function swap(uint256 swapId) external {
+        SwapAgreement storage swapAgreement = s_swaps[swapId];
+        if (swapAgreement.state == SwapState.NONE) {
+            revert NFTSwappingContract__SwapDoesNotExist();
+        }
+        if (swapAgreement.state != SwapState.DEPOSITED) {
+            revert NFTSwappingContract__DepositsArePending();
+        }
+        if (msg.sender != swapAgreement.firstNFTOwner && msg.sender != swapAgreement.secondNFTOwner) {
+            revert NFTSwappingContract__UserIsNotPartOfTheSwap();
+        }
+        address firstNFTAddress = swapAgreement.firstNFTAddress;
+        uint256 firstNFTTokenId = swapAgreement.firstNFTTokenId;
+        address firstNFTOwner = swapAgreement.firstNFTOwner;
+        address secondNFTAddress = swapAgreement.secondNFTAddress;
+        uint256 secondNFTTokenId = swapAgreement.secondNFTTokenId;
+        address secondNFTOwner = swapAgreement.secondNFTOwner;
+        delete s_swaps[swapId];
+        ERC721(firstNFTAddress).safeTransferFrom(address(this), secondNFTOwner, firstNFTTokenId);
+        ERC721(secondNFTAddress).safeTransferFrom(address(this), firstNFTOwner, secondNFTTokenId);
+        emit SwapComplete(swapId, msg.sender);
+    }
 
     /**
      * @notice Withdraws a NFT from the swap agreement.
      * @notice Withdraw can only be done by the NFT owner and if the swap is not in progress.
-     * @notice Withdraw will revert if a swap is in progress.
+     * @notice Withdraw will revert if a swap is in progress since it is deleted.
      * @param swapId The ID of the swap agreement.
      */
     function withdrawNFT(uint256 swapId) external {
         SwapAgreement storage swapAgreement = s_swaps[swapId];
         if (swapAgreement.state == SwapState.NONE) {
             revert NFTSwappingContract__SwapDoesNotExist();
-        }
-        if (swapAgreement.state == SwapState.IN_PROGRESS) {
-            revert NFTSwappingContract__NFTCannotBeWithdrawWhileSwapping();
         }
         bool firstNFTOwner = false;
         if (msg.sender == swapAgreement.firstNFTOwner) {
