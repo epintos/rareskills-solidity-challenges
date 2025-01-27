@@ -14,8 +14,10 @@ contract NFTSwappingContractTest is Test {
     Token_ERC721 nft2;
     uint256 constant NFT_1_TOKEN_ID = 0;
     uint256 constant NFT_2_TOKEN_ID = 0;
+    uint256 constant SWAP_ID = 0;
 
-    event SwapAgreementCreated(uint256 indexed swapId, address firstNFTOwner);
+    event SwapAgreementCreated(uint256 indexed swapId, address indexed firstNFTOwner);
+    event Deposited(uint256 indexed swapId, address indexed owner, address nftAddress, uint256 nftTokenId);
 
     function setUp() public {
         nftSwappingContract = new NFTSwappingContract();
@@ -27,11 +29,19 @@ contract NFTSwappingContractTest is Test {
 
     // createSwapAgreement
 
+    function testCreateSwapAgreementRevertsIfAddressIsZero() public {
+        vm.expectRevert(NFTSwappingContract.NFTSwappingContract__CannotBeZeroAddress.selector);
+        nftSwappingContract.createSwapAgreement(address(0), NFT_1_TOKEN_ID, address(nft2), NFT_2_TOKEN_ID);
+        vm.expectRevert(NFTSwappingContract.NFTSwappingContract__CannotBeZeroAddress.selector);
+        nftSwappingContract.createSwapAgreement(address(nft1), NFT_1_TOKEN_ID, address(0), NFT_2_TOKEN_ID);
+    }
+
     function testCreateSwapAgreementCreatesAgreement() public {
         vm.prank(USER_1);
-        nftSwappingContract.createSwapAgreement(address(nft1), NFT_1_TOKEN_ID, address(nft2), NFT_2_TOKEN_ID);
+        uint256 swapId =
+            nftSwappingContract.createSwapAgreement(address(nft1), NFT_1_TOKEN_ID, address(nft2), NFT_2_TOKEN_ID);
 
-        NFTSwappingContract.SwapAgreement memory swap = nftSwappingContract.getSwapAgreement(0);
+        NFTSwappingContract.SwapAgreement memory swap = nftSwappingContract.getSwapAgreement(swapId);
         assertEq(swap.firstNFTAddress, address(nft1));
         assertEq(swap.firstNFTTokenId, NFT_1_TOKEN_ID);
         assertEq(swap.secondNFTAddress, address(nft2));
@@ -41,5 +51,78 @@ contract NFTSwappingContractTest is Test {
         assertEq(swap.firstNFTDeposited, false);
         assertEq(swap.secondNFTDeposited, false);
         assert(swap.state == NFTSwappingContract.SwapState.CREATED);
+    }
+
+    function testCreateSwapAgreementEmitsEvent() public {
+        vm.startPrank(USER_1);
+        vm.expectEmit(true, true, false, false, address(nftSwappingContract));
+        emit SwapAgreementCreated(SWAP_ID, USER_1);
+        nftSwappingContract.createSwapAgreement(address(nft1), NFT_1_TOKEN_ID, address(nft2), NFT_2_TOKEN_ID);
+        vm.stopPrank();
+    }
+
+    // depositNFT
+    function testDepositNFTRevertsIfSwapIdDoesNotExist() public {
+        vm.prank(USER_1);
+        vm.expectRevert(NFTSwappingContract.NFTSwappingContract__SwapDoesNotExist.selector);
+        nftSwappingContract.depositNFT(SWAP_ID, address(nft1), NFT_1_TOKEN_ID);
+    }
+
+    function testDepositNFTRevertsIfNotInCreateState() public {
+        vm.startPrank(USER_1);
+        uint256 swapId =
+            nftSwappingContract.createSwapAgreement(address(nft1), NFT_1_TOKEN_ID, address(nft2), NFT_2_TOKEN_ID);
+        nft1.approve(address(nftSwappingContract), NFT_1_TOKEN_ID);
+        nftSwappingContract.depositNFT(swapId, address(nft1), NFT_1_TOKEN_ID);
+        vm.stopPrank();
+
+        vm.startPrank(USER_2);
+        nft2.approve(address(nftSwappingContract), NFT_2_TOKEN_ID);
+        nftSwappingContract.depositNFT(swapId, address(nft2), NFT_2_TOKEN_ID);
+
+        // Deposits again
+        vm.expectRevert(NFTSwappingContract.NFTSwappingContract__SwapNotInCreatedState.selector);
+        nftSwappingContract.depositNFT(swapId, address(nft2), NFT_2_TOKEN_ID);
+        vm.stopPrank();
+    }
+
+    function testDepositUpdatesSwapAgreementCorrectly() public {
+        vm.startPrank(USER_1);
+        uint256 swapId =
+            nftSwappingContract.createSwapAgreement(address(nft1), NFT_1_TOKEN_ID, address(nft2), NFT_2_TOKEN_ID);
+        nft1.approve(address(nftSwappingContract), NFT_1_TOKEN_ID);
+        nftSwappingContract.depositNFT(swapId, address(nft1), NFT_1_TOKEN_ID);
+        assertEq(nftSwappingContract.getSwapAgreement(swapId).firstNFTDeposited, true);
+        vm.stopPrank();
+
+        vm.startPrank(USER_2);
+        nft2.approve(address(nftSwappingContract), NFT_2_TOKEN_ID);
+        nftSwappingContract.depositNFT(swapId, address(nft2), NFT_2_TOKEN_ID);
+        NFTSwappingContract.SwapAgreement memory swap = nftSwappingContract.getSwapAgreement(swapId);
+        assertEq(swap.secondNFTDeposited, true);
+        assertEq(swap.secondNFTOwner, USER_2);
+        assert(swap.state == NFTSwappingContract.SwapState.DEPOSITED);
+        vm.stopPrank();
+    }
+
+    function testDepositLocksNFT() public {
+        vm.startPrank(USER_1);
+        uint256 swapId =
+            nftSwappingContract.createSwapAgreement(address(nft1), NFT_1_TOKEN_ID, address(nft2), NFT_2_TOKEN_ID);
+        nft1.approve(address(nftSwappingContract), NFT_1_TOKEN_ID);
+        nftSwappingContract.depositNFT(swapId, address(nft1), NFT_1_TOKEN_ID);
+        assertEq(nft1.ownerOf(NFT_1_TOKEN_ID), address(nftSwappingContract));
+        vm.stopPrank();
+    }
+
+    function testDepositEmitsEvent() public {
+        vm.startPrank(USER_1);
+        uint256 swapId =
+            nftSwappingContract.createSwapAgreement(address(nft1), NFT_1_TOKEN_ID, address(nft2), NFT_2_TOKEN_ID);
+        nft1.approve(address(nftSwappingContract), NFT_1_TOKEN_ID);
+        vm.expectEmit(true, true, false, false, address(nftSwappingContract));
+        emit Deposited(swapId, USER_1, address(nft1), NFT_1_TOKEN_ID);
+        nftSwappingContract.depositNFT(swapId, address(nft1), NFT_1_TOKEN_ID);
+        vm.stopPrank();
     }
 }
