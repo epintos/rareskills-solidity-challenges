@@ -18,6 +18,7 @@ contract FundraiserContractTest is Test {
 
     event FundraiserCreated(address indexed creator, uint256 fundraiserId, uint256 goal, uint256 deadline);
     event Deposited(address indexed donator, uint256 fundraiserId, uint256 amount);
+    event Withdrawn(address indexed caller, uint256 fundraiserId);
 
     function setUp() public {
         fundraiserContract = new FundraiserContract();
@@ -52,8 +53,6 @@ contract FundraiserContractTest is Test {
         assertEq(fundraiser.deadline, block.timestamp + deadline);
         assertEq(fundraiser.amountRaised, 0);
         assertEq(fundraiser.creator, CREATOR);
-        assertEq(fundraiser.goalMet, false);
-        assertEq(fundraiser.creatorPaid, false);
         assertEq(fundraiserContract.getFundraiserQuantity(), 1);
     }
 
@@ -65,7 +64,6 @@ contract FundraiserContractTest is Test {
     }
 
     // deposit
-
     function testDepositRevertsIfAmountIsZero(uint256 _goal, uint256 _deadline) public {
         (uint256 fundraiserId,,) = createFundraiser(_goal, _deadline);
         vm.prank(DONATOR);
@@ -87,20 +85,28 @@ contract FundraiserContractTest is Test {
         fundraiserContract.deposit{ value: goal }(fundraiserId);
     }
 
+    function testDepositRevertsIfCreatorDeposits(uint256 _goal, uint256 _deadline) public {
+        (uint256 fundraiserId, uint256 goal,) = createFundraiser(_goal, _deadline);
+        vm.deal(CREATOR, goal);
+        vm.prank(CREATOR);
+        vm.expectRevert(FundraiserContract.FundraiserContract__CreatorCannotDeposit.selector);
+        fundraiserContract.deposit{ value: goal }(fundraiserId);
+    }
+
     function testDepositUpdatesState(uint256 _goal, uint256 _deadline, uint256 deposit) public {
         (uint256 fundraiserId,,) = createFundraiser(_goal, _deadline);
         deposit = bound(deposit, GOAL_MIN, (GOAL_MAX - 1) / 2);
-        vm.prank(DONATOR);
+        vm.startPrank(DONATOR);
         fundraiserContract.deposit{ value: deposit }(fundraiserId);
         assertEq(fundraiserContract.getFundraiser(fundraiserId).amountRaised, deposit);
-        assertEq(fundraiserContract.getDonatorFundaisers(DONATOR)[0], fundraiserId);
         assertEq(address(fundraiserContract).balance, deposit);
+        assertEq(fundraiserContract.getDonatorAmount(fundraiserId, DONATOR), deposit);
 
-        vm.prank(DONATOR);
         fundraiserContract.deposit{ value: deposit }(fundraiserId);
         assertEq(fundraiserContract.getFundraiser(fundraiserId).amountRaised, deposit * 2);
-        assertEq(fundraiserContract.getDonatorFundaisers(DONATOR).length, 1);
         assertEq(address(fundraiserContract).balance, deposit * 2);
+        assertEq(fundraiserContract.getDonatorAmount(fundraiserId, DONATOR), deposit * 2);
+        vm.stopPrank();
     }
 
     function testDepositEmitsEvent(uint256 _goal, uint256 _deadline, uint256 deposit) public {
@@ -110,5 +116,95 @@ contract FundraiserContractTest is Test {
         vm.expectEmit(true, false, false, false, address(fundraiserContract));
         emit Deposited(DONATOR, fundraiserId, deposit);
         fundraiserContract.deposit{ value: deposit }(fundraiserId);
+    }
+
+    // withdraw
+    function testWithdrawRevertsIfFundraiserDoesNotExist() public {
+        vm.expectRevert(FundraiserContract.FundraiserContract__FundraiserDoesNotExist.selector);
+        fundraiserContract.withdraw(0);
+    }
+
+    function testWithdrawRevertsIfDeadlineHasNotPassed(uint256 _goal, uint256 _deadline) public {
+        (uint256 fundraiserId,,) = createFundraiser(_goal, _deadline);
+        vm.expectRevert(FundraiserContract.FundraiserContract__CannotWithdrawBeforeDeadline.selector);
+        fundraiserContract.withdraw(fundraiserId);
+    }
+
+    function testWithdrawRevertsIfCreatorAlreadyPaid(uint256 _goal, uint256 _deadline) public {
+        (uint256 fundraiserId, uint256 goal, uint256 deadline) = createFundraiser(_goal, _deadline);
+        vm.prank(DONATOR);
+        fundraiserContract.deposit{ value: goal }(fundraiserId);
+
+        vm.warp(block.timestamp + deadline + 1);
+
+        vm.startPrank(CREATOR);
+        fundraiserContract.withdraw(fundraiserId);
+        vm.expectRevert(FundraiserContract.FundraiserContract__CreatorAlreadyPaid.selector);
+        fundraiserContract.withdraw(fundraiserId);
+        vm.stopPrank();
+    }
+
+    function testWithdrawForCreatorRevertsIfGoalNotMet(uint256 _goal, uint256 _deadline) public {
+        (uint256 fundraiserId,, uint256 deadline) = createFundraiser(_goal, _deadline);
+
+        vm.warp(block.timestamp + deadline + 1);
+
+        vm.startPrank(CREATOR);
+        vm.expectRevert(FundraiserContract.FundraiserContract__CreatorCannotWithdrawGoalNotMet.selector);
+        fundraiserContract.withdraw(fundraiserId);
+    }
+
+    function testWithdrawFundsToCreator() public {
+        (uint256 fundraiserId, uint256 goal, uint256 deadline) = createFundraiser(GOAL_MAX, DEADLINE_MIN);
+        vm.prank(DONATOR);
+        fundraiserContract.deposit{ value: goal }(fundraiserId);
+
+        vm.warp(block.timestamp + deadline + 1);
+
+        vm.prank(CREATOR);
+        vm.expectEmit(true, false, false, false, address(fundraiserContract));
+        emit Withdrawn(CREATOR, fundraiserId);
+        fundraiserContract.withdraw(fundraiserId);
+
+        assertEq(address(fundraiserContract).balance, 0);
+        assert(fundraiserContract.getFundraiser(fundraiserId).state == FundraiserContract.FundraiserState.CREATOR_PAID);
+        assertEq(address(CREATOR).balance, goal);
+    }
+
+    function testWithdrawRevertsForDonatorIfGoalNotMet(uint256 _goal, uint256 _deadline) public {
+        (uint256 fundraiserId, uint256 goal, uint256 deadline) = createFundraiser(_goal, _deadline);
+        vm.prank(DONATOR);
+        fundraiserContract.deposit{ value: goal }(fundraiserId);
+
+        vm.warp(block.timestamp + deadline + 1);
+
+        vm.prank(DONATOR);
+        vm.expectRevert(FundraiserContract.FundraiserContract__DonatorCannotWithdrawGoalMet.selector);
+        fundraiserContract.withdraw(fundraiserId);
+    }
+
+    function testWithdrawRevetsIfDonatorDoesNotHaveDonation(uint256 _goal, uint256 _deadline) public {
+        (uint256 fundraiserId,, uint256 deadline) = createFundraiser(_goal, _deadline);
+        vm.warp(block.timestamp + deadline + 1);
+
+        vm.prank(DONATOR);
+        vm.expectRevert(FundraiserContract.FundraiserContract__NoAmountLeftToWithdraw.selector);
+        fundraiserContract.withdraw(fundraiserId);
+    }
+
+    function testWithdrawFundsToDonator(uint256 _goal, uint256 _deadline) public {
+        (uint256 fundraiserId, uint256 goal, uint256 deadline) = createFundraiser(_goal, _deadline);
+        vm.startPrank(DONATOR);
+        fundraiserContract.deposit{ value: goal / 2 }(fundraiserId);
+        fundraiserContract.deposit{ value: goal / 2 - 1 }(fundraiserId);
+
+        vm.warp(block.timestamp + deadline + 1);
+
+        vm.expectEmit(true, false, false, false, address(fundraiserContract));
+        emit Withdrawn(DONATOR, fundraiserId);
+        fundraiserContract.withdraw(fundraiserId);
+        vm.stopPrank();
+        assertEq(address(fundraiserContract).balance, 0);
+        assertEq(address(DONATOR).balance, DONATOR_INITIAL_BALANCE);
     }
 }

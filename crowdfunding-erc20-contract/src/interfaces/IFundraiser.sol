@@ -18,7 +18,7 @@ interface IFundraiser {
     //  * @notice Donator will withdraw all tokens funds
     //  * @param fundraiserId Fundraiser id
     //  */
-    // function withdraw(uint256 fundraiserId) external;
+    function withdraw(uint256 fundraiserId) external;
 
     // /**
     //  * @notice Deposit ETH to a fundraiser
