@@ -26,6 +26,7 @@ contract EnglishAuction {
     error EnglishAuction__TransferFailed();
     error EnglishAuction__AuctionReservePriceNotMet();
     error EnglishAuction__ReceiverIsNotCurrentContract();
+    error EnglishAuction__SellerCannotBid();
 
     /// TYPE DECLARATIONS
     struct Auction {
@@ -49,7 +50,8 @@ contract EnglishAuction {
     uint256 private s_auctionId;
 
     /// EVENTS
-    event Deposit(uint256 indexed auctionId, address indexed seller);
+    event Deposited(uint256 indexed auctionId, address indexed seller);
+    event BidCreated(uint256 indexed auctionId, address indexed bidder, uint256 amount);
 
     /// MODIFIERS
 
@@ -97,15 +99,43 @@ contract EnglishAuction {
         s_auctionId++;
 
         ERC721(nftAddress).safeTransferFrom(msg.sender, address(this), nftTokenId);
-        emit Deposit(auctionId, msg.sender);
+        emit Deposited(auctionId, msg.sender);
     }
 
     /**
-     * @notice Users can bid on an NFT by depositing ETH. The highest bid wins the auction
+     * @notice Users can bid on an NFT by depositing ETH. The highest bid wins the auctio
+     * @notice The bid is only valid if the reserve price is met
+     * @notice The bidder can only bid once
      * @param auctionId The id of the auction
-     * @param amount The amount of ETH to bid
      */
-    function bid(uint256 auctionId, uint256 amount) external payable { }
+    function bid(uint256 auctionId) external payable {
+        if (msg.value == 0) {
+            revert EnglishAuction__ReservePriceCannotBeZero();
+        }
+        Auction storage auction = s_auctions[auctionId];
+        if (!auction.exists) {
+            revert EnglishAuction__AuctionDoesNotExist();
+        }
+        if (auction.seller == msg.sender) {
+            revert EnglishAuction__SellerCannotBid();
+        }
+
+        if (block.timestamp >= auction.deadline) {
+            revert EnglishAuction__AuctionHasEnded();
+        }
+
+        if (msg.value < auction.reservePrice) {
+            revert EnglishAuction__DepositLowerThanReservePrice();
+        }
+
+        if (s_bidderAuctions[msg.sender][auctionId] > 0) {
+            revert EnglishAuction__BidderHasAlreadyBid();
+        }
+
+        s_auctionBids[auctionId].push(Bid({ bidder: msg.sender, amount: msg.value }));
+        s_bidderAuctions[msg.sender][auctionId] = msg.value;
+        emit BidCreated(auctionId, msg.sender, msg.value);
+    }
 
     /**
      * @notice User can withdraw a bid if the reserve price is not met after the deadline
