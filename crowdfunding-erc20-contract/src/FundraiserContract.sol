@@ -155,8 +155,15 @@ contract FundraiserContract {
         emit Deposited(msg.sender, fundraiserId, amount);
     }
 
+    /**
+     * @notice Create a fundraiser
+     * @param goal Fundraiser goal
+     * @param deadline Fundraiser deadline in days
+     * @param token 0x0 for ETH, ERC20 token address otherwise
+     * @return fundraiserId Fundraiser id
+     */
     function _createFundraiser(uint256 goal, uint256 deadline, address token) internal returns (uint256 fundraiserId) {
-        if (deadline < block.timestamp) {
+        if (block.timestamp + deadline <= block.timestamp) {
             revert FundraiserContract__DeadlineCannotBeInThePast();
         }
 
@@ -177,6 +184,11 @@ contract FundraiserContract {
         emit FundraiserCreated(msg.sender, fundraiserId, goal, deadline);
     }
 
+    /**
+     * @notice Validate deposit
+     * @param fundraiserId Fundraiser id
+     * @param amount Amount to deposit
+     */
     function _validateDeposit(uint256 fundraiserId, uint256 amount) internal view {
         if (amount == 0) {
             revert FundraiserContract__DepositCannotBeZero();

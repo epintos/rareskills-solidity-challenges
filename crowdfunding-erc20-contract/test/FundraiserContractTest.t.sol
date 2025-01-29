@@ -69,7 +69,7 @@ abstract contract FundraiserContractTest is Test {
     function testCreateFundraiserRevertsIfDeadlineIsInThePast() public {
         vm.prank(CREATOR);
         vm.expectRevert(FundraiserContract.FundraiserContract__DeadlineCannotBeInThePast.selector);
-        createFundraiser(GOAL_MAX, block.timestamp - 1);
+        createFundraiser(GOAL_MAX, 0 days);
     }
 
     function testCreateFundraiserRevertsIfGoalIsZero() public {
