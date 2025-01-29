@@ -13,9 +13,9 @@ import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
  */
 contract EnglishAuction {
     /// ERRORS
+    error EnglishAuction__AddressCannotBeZero();
     error EnglishAuction__AuctionDoesNotExist();
     error EnglishAuction__AuctionDeadlineCannotBeInThePast();
-    error EnglishAuction__AddressCannotBeZero();
     error EnglishAuction__ReservePriceCannotBeZero();
     error EnglishAuction__DepositLowerThanReservePrice();
     error EnglishAuction__AuctionHasEnded();
@@ -25,13 +25,14 @@ contract EnglishAuction {
     error EnglishAuction__SenderIsNotSeller();
     error EnglishAuction__TransferFailed();
     error EnglishAuction__AuctionReservePriceNotMet();
+    error EnglishAuction__ReceiverIsNotCurrentContract();
 
     /// TYPE DECLARATIONS
     struct Auction {
         bool exists;
         address seller;
-        address NFTAddress;
-        uint256 NFTTokenId;
+        address nftAddress;
+        uint256 nftTokenId;
         uint256 deadline;
         uint256 reservePrice;
     }
@@ -42,11 +43,13 @@ contract EnglishAuction {
     }
 
     /// STORE VARIABLES
-    mapping(uint256 auctionId => Auction) public s_auctions;
-    mapping(uint256 auctionId => Bid[]) public s_auctionBids;
-    mapping(address bidder => mapping(uint256 auctionId => uint256 amount)) public s_bidderAuctions;
+    mapping(uint256 auctionId => Auction) private s_auctions;
+    mapping(uint256 auctionId => Bid[]) private s_auctionBids;
+    mapping(address bidder => mapping(uint256 auctionId => uint256 amount)) private s_bidderAuctions;
+    uint256 private s_auctionId;
 
     /// EVENTS
+    event Deposit(uint256 indexed auctionId, address indexed seller);
 
     /// MODIFIERS
 
@@ -56,21 +59,46 @@ contract EnglishAuction {
 
     /**
      * @notice Deposit an NFT and starts an auction
-     * @param NFTAddress The address of the NFT contract
-     * @param NFTTokenId The token id of the NFT
-     * @param deadline The deadline of the auction
+     * @param nftAddress The address of the NFT contract
+     * @param nftTokenId The token id of the NFT
+     * @param deadline The deadline of the auction in days
      * @param reservePrice The minium price the bidding price should reach
      * @return auctionId The id of the auction
      */
     function deposit(
-        address NFTAddress,
-        uint256 NFTTokenId,
+        address nftAddress,
+        uint256 nftTokenId,
         uint256 deadline,
         uint256 reservePrice
     )
         external
         returns (uint256 auctionId)
-    { }
+    {
+        if (nftAddress == address(0)) {
+            revert EnglishAuction__AddressCannotBeZero();
+        }
+
+        if (block.timestamp + deadline <= block.timestamp) {
+            revert EnglishAuction__AuctionDeadlineCannotBeInThePast();
+        }
+
+        if (reservePrice == 0) {
+            revert EnglishAuction__ReservePriceCannotBeZero();
+        }
+        auctionId = s_auctionId;
+        s_auctions[auctionId] = Auction({
+            exists: true,
+            seller: msg.sender,
+            nftAddress: nftAddress,
+            nftTokenId: nftTokenId,
+            deadline: block.timestamp + deadline,
+            reservePrice: reservePrice
+        });
+        s_auctionId++;
+
+        ERC721(nftAddress).safeTransferFrom(msg.sender, address(this), nftTokenId);
+        emit Deposit(auctionId, msg.sender);
+    }
 
     /**
      * @notice Users can bid on an NFT by depositing ETH. The highest bid wins the auction
@@ -93,6 +121,22 @@ contract EnglishAuction {
     function sellerEndAuction(uint256 auctionId) external { }
 
     // EXTERNAL VIEW FUNCTIONS
+
+    function onERC721Received(
+        address operator,
+        address, /* from */
+        uint256, /* tokenId */
+        bytes calldata /* data */
+    )
+        external
+        view
+        returns (bytes4)
+    {
+        if (operator != address(this)) {
+            revert EnglishAuction__ReceiverIsNotCurrentContract();
+        }
+        return this.onERC721Received.selector;
+    }
 
     /**
      * @notice Get the auction details
@@ -119,5 +163,13 @@ contract EnglishAuction {
      */
     function getBidderAmount(uint256 auctionId, address bidder) external view returns (uint256) {
         return s_bidderAuctions[bidder][auctionId];
+    }
+
+    /**
+     * @notice Get the current auction quantity
+     * @return The current auction quantity
+     */
+    function getAuctionQuantity() external view returns (uint256) {
+        return s_auctionId;
     }
 }
