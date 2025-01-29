@@ -2,9 +2,20 @@
 
 pragma solidity ^0.8.28;
 
-import { IFundraiser } from "./interfaces/IFundraiser.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-contract FundraiserContract is IFundraiser {
+/**
+ * @title FundraiserContract
+ * @author Esteban Pintos
+ * @notice Contract that allows users to create a Fundraiser with a goal and deadline for donators to contribute with
+ * funds.
+ * @notice If the goal is met, then the creator can withdraw the funds. If the goal is not met, then the donators can
+ * withdraw their funds.
+ * @notice This is a generic contract that can support both ETH and ERC20 tokens.
+ * @notice ERC20FundaierContract and ETHFundraiserContract are contracts that inherit from this contract and implement
+ * the deposit and createFundraiser function for their respective tokens.
+ */
+contract FundraiserContract {
     /// ERRORS
     error FundraiserContract__DeadlineCannotBeInThePast();
     error FundraiserContract__GoalCannotBeZero();
@@ -18,6 +29,7 @@ contract FundraiserContract is IFundraiser {
     error FundraiserContract__WithdrawalFailed();
     error FundraiserContract__CreatorAlreadyPaid();
     error FundraiserContract__CreatorCannotDeposit();
+    error FundraiserContract__CannotBeTokenWithZeroAddress();
 
     enum FundraiserState {
         NOT_CREATED,
@@ -32,6 +44,7 @@ contract FundraiserContract is IFundraiser {
         uint256 amountRaised;
         address creator;
         FundraiserState state;
+        address token; // 0x0 for ETH
     }
 
     /// STATE VARIABLES
@@ -46,9 +59,12 @@ contract FundraiserContract is IFundraiser {
 
     /// FUNCTIONS
     // EXTERNAL FUNCTIONS
-
     /**
-     * @inheritdoc IFundraiser
+     * @notice Creator of the fundraiser can withdraw funds if goal is met and deadline is passed.
+     * @notice If the goal is not met, everyone can withdraw their funds.
+     * @notice If the goal is met, only the creator can withdraw the funds.
+     * @notice Donator will withdraw all tokens funds
+     * @param fundraiserId Fundraiser id
      */
     function withdraw(uint256 fundraiserId) external {
         Fundraiser memory fundraiser = s_fundraisers[fundraiserId];
@@ -69,58 +85,8 @@ contract FundraiserContract is IFundraiser {
         emit Withdrawn(msg.sender, fundraiserId);
     }
 
-    /**
-     * @notice Deposit ETH to a fundraiser
-     * @notice Cannot deposit after deadline has passed
-     * @notice Creator cannot deposit
-     * @param fundraiserId Fundraiser id
-     */
-    function deposit(uint256 fundraiserId) external payable {
-        if (msg.value == 0) {
-            revert FundraiserContract__DepositCannotBeZero();
-        }
-
-        Fundraiser memory fundraiser = s_fundraisers[fundraiserId];
-
-        if (fundraiser.state == FundraiserState.NOT_CREATED) {
-            revert FundraiserContract__FundraiserDoesNotExist();
-        }
-        if (block.timestamp >= fundraiser.deadline) {
-            revert FundraiserContract__CannotDepositAfterDeadline();
-        }
-        if (msg.sender == fundraiser.creator) {
-            revert FundraiserContract__CreatorCannotDeposit();
-        }
-        s_donators[fundraiserId][msg.sender] += msg.value;
-        s_fundraisers[fundraiserId].amountRaised += msg.value;
-        emit Deposited(msg.sender, fundraiserId, msg.value);
-    }
-
-    /**
-     * @inheritdoc IFundraiser
-     */
-    function createFundraiser(uint256 goal, uint256 deadline) external override returns (uint256 fundraiserId) {
-        if (deadline < block.timestamp) {
-            revert FundraiserContract__DeadlineCannotBeInThePast();
-        }
-
-        if (goal == 0) {
-            revert FundraiserContract__GoalCannotBeZero();
-        }
-
-        fundraiserId = s_fundraiserQuantity;
-        s_fundraisers[fundraiserId] = Fundraiser({
-            goal: goal,
-            deadline: deadline,
-            amountRaised: 0,
-            creator: msg.sender,
-            state: FundraiserState.CREATED
-        });
-        s_fundraiserQuantity++;
-        emit FundraiserCreated(msg.sender, fundraiserId, goal, deadline);
-    }
-
     // INTERNAL FUNCTIONS
+
     /**
      * @notice Withdraw funds for the creator of the Fundraiser
      * @param fundraiserId Fundraiser id
@@ -136,7 +102,12 @@ contract FundraiserContract is IFundraiser {
         }
 
         s_fundraisers[fundraiserId].state = FundraiserState.CREATOR_PAID;
-        (bool success,) = msg.sender.call{ value: fundraiser.amountRaised }("");
+        bool success;
+        if (fundraiser.token == address(0)) {
+            (success,) = msg.sender.call{ value: fundraiser.amountRaised }("");
+        } else {
+            (success) = ERC20(fundraiser.token).transfer(msg.sender, fundraiser.amountRaised);
+        }
         if (!success) {
             revert FundraiserContract__WithdrawalFailed();
         }
@@ -157,9 +128,70 @@ contract FundraiserContract is IFundraiser {
             revert FundraiserContract__NoAmountLeftToWithdraw();
         }
         delete s_donators[fundraiserId][msg.sender];
-        (bool success,) = msg.sender.call{ value: amountDonated }("");
+        bool success;
+        if (fundraiser.token == address(0)) {
+            (success,) = msg.sender.call{ value: amountDonated }("");
+        } else {
+            (success) = ERC20(fundraiser.token).transfer(msg.sender, amountDonated);
+        }
         if (!success) {
             revert FundraiserContract__WithdrawalFailed();
+        }
+    }
+
+    /**
+     * @notice Deposit ETH to a fundraiser
+     * @notice Cannot deposit after deadline has passed
+     * @notice Creator cannot deposit
+     * @param fundraiserId Fundraiser id
+     */
+    function _deposit(uint256 fundraiserId, uint256 amount) internal {
+        _validateDeposit(fundraiserId, amount);
+        s_donators[fundraiserId][msg.sender] += amount;
+        s_fundraisers[fundraiserId].amountRaised += amount;
+        if (s_fundraisers[fundraiserId].token != address(0)) {
+            ERC20(s_fundraisers[fundraiserId].token).transferFrom(msg.sender, address(this), amount);
+        }
+        emit Deposited(msg.sender, fundraiserId, amount);
+    }
+
+    function _createFundraiser(uint256 goal, uint256 deadline, address token) internal returns (uint256 fundraiserId) {
+        if (deadline < block.timestamp) {
+            revert FundraiserContract__DeadlineCannotBeInThePast();
+        }
+
+        if (goal == 0) {
+            revert FundraiserContract__GoalCannotBeZero();
+        }
+
+        fundraiserId = s_fundraiserQuantity;
+        s_fundraisers[fundraiserId] = Fundraiser({
+            goal: goal,
+            deadline: deadline,
+            amountRaised: 0,
+            creator: msg.sender,
+            state: FundraiserState.CREATED,
+            token: token
+        });
+        s_fundraiserQuantity++;
+        emit FundraiserCreated(msg.sender, fundraiserId, goal, deadline);
+    }
+
+    function _validateDeposit(uint256 fundraiserId, uint256 amount) internal view {
+        if (amount == 0) {
+            revert FundraiserContract__DepositCannotBeZero();
+        }
+
+        Fundraiser memory fundraiser = s_fundraisers[fundraiserId];
+
+        if (fundraiser.state == FundraiserState.NOT_CREATED) {
+            revert FundraiserContract__FundraiserDoesNotExist();
+        }
+        if (block.timestamp >= fundraiser.deadline) {
+            revert FundraiserContract__CannotDepositAfterDeadline();
+        }
+        if (msg.sender == fundraiser.creator) {
+            revert FundraiserContract__CreatorCannotDeposit();
         }
     }
 
