@@ -3,6 +3,7 @@
 pragma solidity ^0.8.28;
 
 import { IERC721 } from "@openzeppelin/contracts/interfaces/IERC721.sol";
+import { console2 } from "forge-std/Script.sol";
 
 /**
  * @title NFTMarketplace
@@ -21,6 +22,7 @@ contract NFTMarketplace {
     error NFTMarketPlace__SellerCannotBuyOwnNFT();
     error NFTMarketPlace__PaymentToSellerFailed();
     error NFTMarketPlace__OnlySellerCanCancelSale();
+    error NFTMarketPlace__SellerMustApproveTransfer();
 
     /// TYPE DECLARATIONS
     struct Sale {
@@ -45,13 +47,15 @@ contract NFTMarketplace {
 
     // EXTERNAL FUNCTIONS
     /**
-     * @notice Creates a new NFT sale where the seller gives approval to the marketplace contract to transfer the NFT on
-     * their behalf if a sales is complete.
+     * @notice Creates a new NFT sale.
+     * @notice The seller must approve this contract to transfer the NFT on their behalf before calling this function.
      * @param nftAddress The address of the NFT contract
      * @param tokenId The ID of the NFT
      * @param price The price of the NFT
      * @param expirationTimestamp The timestamp when the sale will expire
      * @return saleId The ID of the sale
+     * @notice Known issue: The seller could try to sell the same NFT twice. As an improvement, we could add a mapping
+     * of the seller's NFTs to check if the NFT is already for sale.
      */
     function sell(
         address nftAddress,
@@ -80,9 +84,9 @@ contract NFTMarketplace {
             seller: msg.sender
         });
         s_nextSaleId++;
-
-        // Fails if the seller doesn't own the NFT or is not autorhized to transfer it
-        IERC721(nftAddress).approve(address(this), tokenId);
+        if (IERC721(nftAddress).getApproved(tokenId) != address(this)) {
+            revert NFTMarketPlace__SellerMustApproveTransfer();
+        }
         emit SaleCreated(saleId, msg.sender);
     }
 
