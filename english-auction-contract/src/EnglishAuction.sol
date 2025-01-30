@@ -57,8 +57,7 @@ contract EnglishAuction {
     event Deposited(uint256 indexed auctionId, address indexed seller);
     event BidCreated(uint256 indexed auctionId, address indexed bidder, uint256 amount);
     event Withdrawn(uint256 indexed auctionId, address indexed bidder, uint256 amount);
-
-    /// MODIFIERS
+    event AuctionEnded(uint256 indexed auctionId, address indexed winner, uint256 amount);
 
     /// FUNCTIONS
 
@@ -172,9 +171,45 @@ contract EnglishAuction {
     /**
      * @notice Seller can end the auction if the reserve price is met. The highest bidder gets the NFT transfered to
      * them and the seller gets the ETH of the highest bid
+     * @dev Deletes the auction and the bids
      * @param auctionId The id of the auction
      */
-    function sellerEndAuction(uint256 auctionId) external { }
+    function sellerEndAuction(uint256 auctionId) external {
+        Auction storage auction = s_auctions[auctionId];
+        if (!auction.exists) {
+            revert EnglishAuction__AuctionDoesNotExist();
+        }
+
+        if (block.timestamp < auction.deadline) {
+            revert EnglishAuction__AuctionHasNotEnded();
+        }
+
+        if (s_auctionBids[auctionId].length == 0) {
+            revert EnglishAuction__AuctionReservePriceNotMet();
+        }
+
+        if (msg.sender != auction.seller) {
+            revert EnglishAuction__SenderIsNotSeller();
+        }
+
+        address winner = _pickWinner(auctionId);
+        uint256 amount = s_bidderAuctions[winner][auctionId];
+        address nftAddress = auction.nftAddress;
+        uint256 nftTokenId = auction.nftTokenId;
+        address seller = auction.seller;
+
+        delete s_bidderAuctions[winner][auctionId];
+        delete s_auctionBids[auctionId];
+        delete s_auctions[auctionId];
+
+        ERC721(nftAddress).safeTransferFrom(address(this), winner, nftTokenId);
+
+        (bool success,) = payable(seller).call{ value: amount }("");
+        if (!success) {
+            revert EnglishAuction__TransferFailed();
+        }
+        emit AuctionEnded(auctionId, winner, amount);
+    }
 
     // INTERNAL FUNCTIONS
 
@@ -215,6 +250,7 @@ contract EnglishAuction {
             revert EnglishAuction__AuctionHasNoBids();
         }
 
+        // This could be optimized by storing the highest bid in the auction struct dynamically
         Bid memory highestBid = bids[0];
         for (uint256 i = 1; i < bids.length; i++) {
             if (bids[i].amount > highestBid.amount) {
