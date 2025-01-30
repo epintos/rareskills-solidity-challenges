@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.28;
 
-import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import { IERC721 } from "@openzeppelin/contracts/interfaces/IERC721.sol";
 
 /**
  * @title NFTMarketplace
@@ -13,14 +13,33 @@ import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
  */
 contract NFTMarketplace {
     /// ERRORS
+    error NFTMarketPlace__DeadlineCannotBeInThePast();
+    error NFTMarketPlace__PriceCannotBeZero();
+    error NFTMarketPlace__SaleDoesNotExist();
+    error NFTMarketPlace__SaleHasExpired();
+    error NFTMarketPlace__PaymentAmoutIsTooLow();
+    error NFTMarketPlace__SellerCannotBuyOwnNFT();
+    error NFTMarketPlace__PaymentToSellerFailed();
+    error NFTMarketPlace__OnlySellerCanCancelSale();
 
     /// TYPE DECLARATIONS
+    struct Sale {
+        bool exists;
+        address nftAddress;
+        uint256 tokenId;
+        uint256 price;
+        uint256 expirationTimestamp;
+        address seller;
+    }
 
     /// STATE VARIABLES
+    mapping(uint256 saleId => Sale sale) private s_sales;
+    uint256 private s_nextSaleId;
 
     /// EVENTS
-
-    /// MODIFIERS
+    event SaleCreated(uint256 indexed saleId, address indexed seller);
+    event SaleCompleted(uint256 indexed saleId, address indexed seller, uint256 price);
+    event SaleCanceled(uint256 indexed saleId, address indexed seller);
 
     /// FUNCTIONS
 
@@ -42,22 +61,98 @@ contract NFTMarketplace {
     )
         external
         returns (uint256 saleId)
-    { }
+    {
+        if (expirationTimestamp <= block.timestamp) {
+            revert NFTMarketPlace__DeadlineCannotBeInThePast();
+        }
+
+        if (price == 0) {
+            revert NFTMarketPlace__PriceCannotBeZero();
+        }
+
+        saleId = s_nextSaleId;
+        s_sales[saleId] = Sale({
+            exists: true,
+            nftAddress: nftAddress,
+            tokenId: tokenId,
+            price: price,
+            expirationTimestamp: expirationTimestamp,
+            seller: msg.sender
+        });
+        s_nextSaleId++;
+
+        // Fails if the seller doesn't own the NFT or is not autorhized to transfer it
+        IERC721(nftAddress).approve(address(this), tokenId);
+        emit SaleCreated(saleId, msg.sender);
+    }
 
     /**
      * @notice Allows a user to buy an NFT that is for sale
      * @notice The sale will fail if the seller doesn't have the NFT anymore
      * @param saleId The ID of the sale
      */
-    function buy(uint256 saleId) external payable { }
+    function buy(uint256 saleId) external payable {
+        Sale memory sale = s_sales[saleId];
+        if (!sale.exists) {
+            revert NFTMarketPlace__SaleDoesNotExist();
+        }
+        if (sale.expirationTimestamp < block.timestamp) {
+            revert NFTMarketPlace__SaleHasExpired();
+        }
+        if (msg.value < sale.price) {
+            revert NFTMarketPlace__PaymentAmoutIsTooLow();
+        }
+        if (msg.sender == sale.seller) {
+            revert NFTMarketPlace__SellerCannotBuyOwnNFT();
+        }
+        address nftAddress = sale.nftAddress;
+        address seller = sale.seller;
+        uint256 tokenId = sale.tokenId;
+        delete s_sales[saleId];
+
+        IERC721(nftAddress).transferFrom(seller, msg.sender, tokenId);
+        (bool success,) = payable(seller).call{ value: msg.value }("");
+        if (!success) {
+            revert NFTMarketPlace__PaymentToSellerFailed();
+        }
+        emit SaleCompleted(saleId, sale.seller, msg.value);
+    }
 
     /**
      * @notice Cancels a sale at any time
      * @param saleId The ID of the sale
      */
-    function cancel(uint256 saleId) external { }
-
-    // INTERNAL FUNCTIONS
+    function cancel(uint256 saleId) external {
+        Sale memory sale = s_sales[saleId];
+        if (!sale.exists) {
+            revert NFTMarketPlace__SaleDoesNotExist();
+        }
+        if (msg.sender != sale.seller) {
+            revert NFTMarketPlace__OnlySellerCanCancelSale();
+        }
+        address nftAddress = sale.nftAddress;
+        uint256 tokenId = sale.tokenId;
+        delete s_sales[saleId];
+        IERC721(nftAddress).approve(address(0), tokenId);
+        emit SaleCanceled(saleId, msg.sender);
+    }
 
     // EXTERNAL VIEW FUNCTIONS
+    /**
+     * @notice Returns the sale information
+     * @param saleId The ID of the sale
+     * @return sale The sale information
+     */
+    function getSale(uint256 saleId) external view returns (Sale memory) {
+        return s_sales[saleId];
+    }
+
+    /**
+     * @notice Returns the next sale ID
+     * @return The next sale ID
+     *
+     */
+    function getNextSaleId() external view returns (uint256) {
+        return s_nextSaleId;
+    }
 }
