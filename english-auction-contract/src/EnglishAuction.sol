@@ -3,7 +3,7 @@
 pragma solidity ^0.8.28;
 
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import { console2 } from "forge-std/Script.sol";
+import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 /**
  * @title EnglishAuction
@@ -12,7 +12,7 @@ import { console2 } from "forge-std/Script.sol";
  * bid wins the auction. If the reserve price is not met after the deadline, the users can withdraw their bid. If the
  * reserve price is met, the seller can end the auction and the highest bidder gets the NFT and the seller gets the ETH.
  */
-contract EnglishAuction {
+contract EnglishAuction is IERC721Receiver {
     /// ERRORS
     error EnglishAuction__AddressCannotBeZero();
     error EnglishAuction__AuctionDoesNotExist();
@@ -262,7 +262,10 @@ contract EnglishAuction {
     }
 
     // EXTERNAL VIEW FUNCTIONS
-
+    /**
+     *
+     * @inheritdoc IERC721Receiver
+     */
     function onERC721Received(
         address operator,
         address, /* from */
