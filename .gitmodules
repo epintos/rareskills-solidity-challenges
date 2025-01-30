@@ -34,3 +34,6 @@
 [submodule "english-auction-contract/lib/openzeppelin-contracts"]
 	path = english-auction-contract/lib/openzeppelin-contracts
 	url = https://github.com/openzeppelin/openzeppelin-contracts
+[submodule "simple-nft-marketplace/lib/forge-std"]
+	path = simple-nft-marketplace/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
