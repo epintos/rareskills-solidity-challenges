@@ -37,3 +37,6 @@
 [submodule "simple-nft-marketplace/lib/forge-std"]
 	path = simple-nft-marketplace/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
+[submodule "simple-nft-marketplace/lib/openzeppelin-contracts"]
+	path = simple-nft-marketplace/lib/openzeppelin-contracts
+	url = https://github.com/openzeppelin/openzeppelin-contracts
