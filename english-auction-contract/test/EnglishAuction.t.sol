@@ -22,6 +22,7 @@ contract EnglishAuctionTest is Test {
 
     event Deposited(uint256 indexed auctionId, address indexed seller);
     event BidCreated(uint256 indexed auctionId, address indexed bidder, uint256 amount);
+    event Withdrawn(uint256 indexed auctionId, address indexed bidder, uint256 amount);
 
     function setUp() public {
         nft = new Token_ERC721("NFT", "NFT");
@@ -29,6 +30,7 @@ contract EnglishAuctionTest is Test {
         auctionContract = new EnglishAuction();
 
         vm.deal(BIDDER_1, BIDDER_INITIAL_BALANCE);
+        vm.deal(BIDDER_2, BIDDER_INITIAL_BALANCE);
     }
 
     // Helper Functions
@@ -149,5 +151,55 @@ contract EnglishAuctionTest is Test {
         vm.expectEmit(true, true, false, false, address(auctionContract));
         emit BidCreated(auctionId, BIDDER_1, reservePrice);
         auctionContract.bid{ value: reservePrice }(auctionId);
+    }
+
+    // withdraw
+    function testWithdrawRevertsIfAuctionDoesNotExist() public {
+        vm.prank(BIDDER_1);
+        vm.expectRevert(EnglishAuction.EnglishAuction__AuctionDoesNotExist.selector);
+        auctionContract.withdraw(0);
+    }
+
+    function testWithdrawRevertsIfDeadlineHasNotPassed(uint256 _reservePrice, uint256 _deadline) public {
+        (uint256 auctionId,,) = depositNFT(_reservePrice, _deadline);
+        vm.prank(BIDDER_1);
+        vm.expectRevert(EnglishAuction.EnglishAuction__AuctionHasNotEnded.selector);
+        auctionContract.withdraw(auctionId);
+    }
+
+    function testWithdrawRevertsIfThereAreNoWinners(uint256 _reservePrice, uint256 _deadline) public {
+        (uint256 auctionId,, uint256 deadline) = depositNFT(_reservePrice, _deadline);
+        vm.warp(block.timestamp + deadline + 1 days);
+        vm.prank(BIDDER_1);
+        vm.expectRevert(EnglishAuction.EnglishAuction__BidderHasNotBid.selector);
+        auctionContract.withdraw(auctionId);
+    }
+
+    function testWithdrawReverstsIfWinnerTriesToWithdraw(uint256 _reservePrice, uint256 _deadline) public {
+        (uint256 auctionId, uint256 reservePrice, uint256 deadline) = depositNFT(_reservePrice, _deadline);
+        vm.prank(BIDDER_1);
+        auctionContract.bid{ value: reservePrice + 1 }(auctionId);
+        vm.prank(BIDDER_2);
+        auctionContract.bid{ value: reservePrice + 1 }(auctionId);
+        vm.warp(block.timestamp + deadline + 1 days);
+        vm.prank(BIDDER_1);
+        vm.expectRevert(EnglishAuction.EnglishAuction__WinnerCannotWithdrawBid.selector);
+        auctionContract.withdraw(auctionId);
+    }
+
+    function testWithdrawTransfersFundsIfNotWinner(uint256 _reservePrice, uint256 _deadline) public {
+        (uint256 auctionId, uint256 reservePrice, uint256 deadline) = depositNFT(_reservePrice, _deadline);
+        vm.prank(BIDDER_1);
+        auctionContract.bid{ value: reservePrice + 1 }(auctionId);
+        vm.prank(BIDDER_2);
+        auctionContract.bid{ value: reservePrice + 2 }(auctionId);
+        vm.warp(block.timestamp + deadline + 1 days);
+        uint256 initialBidderBalance = address(BIDDER_1).balance;
+        uint256 initialContractBalance = address(auctionContract).balance;
+
+        vm.prank(BIDDER_1);
+        auctionContract.withdraw(auctionId);
+        assertEq(address(BIDDER_1).balance, initialBidderBalance + reservePrice + 1);
+        assertEq(address(auctionContract).balance, initialContractBalance - reservePrice - 1);
     }
 }

@@ -3,6 +3,7 @@
 pragma solidity ^0.8.28;
 
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import { console2 } from "forge-std/Script.sol";
 
 /**
  * @title EnglishAuction
@@ -27,6 +28,8 @@ contract EnglishAuction {
     error EnglishAuction__AuctionReservePriceNotMet();
     error EnglishAuction__ReceiverIsNotCurrentContract();
     error EnglishAuction__SellerCannotBid();
+    error EnglishAuction__AuctionHasNoBids();
+    error EnglishAuction__WinnerCannotWithdrawBid();
 
     /// TYPE DECLARATIONS
     struct Auction {
@@ -36,6 +39,7 @@ contract EnglishAuction {
         uint256 nftTokenId;
         uint256 deadline;
         uint256 reservePrice;
+        address winner;
     }
 
     struct Bid {
@@ -52,6 +56,7 @@ contract EnglishAuction {
     /// EVENTS
     event Deposited(uint256 indexed auctionId, address indexed seller);
     event BidCreated(uint256 indexed auctionId, address indexed bidder, uint256 amount);
+    event Withdrawn(uint256 indexed auctionId, address indexed bidder, uint256 amount);
 
     /// MODIFIERS
 
@@ -94,7 +99,8 @@ contract EnglishAuction {
             nftAddress: nftAddress,
             nftTokenId: nftTokenId,
             deadline: block.timestamp + deadline,
-            reservePrice: reservePrice
+            reservePrice: reservePrice,
+            winner: address(0)
         });
         s_auctionId++;
 
@@ -141,7 +147,27 @@ contract EnglishAuction {
      * @notice User can withdraw a bid if the reserve price is not met after the deadline
      * @param auctionId The id of the auction
      */
-    function withdraw(uint256 auctionId) external { }
+    function withdraw(uint256 auctionId) external {
+        Auction storage auction = s_auctions[auctionId];
+        if (!auction.exists) {
+            revert EnglishAuction__AuctionDoesNotExist();
+        }
+
+        if (block.timestamp < auction.deadline) {
+            revert EnglishAuction__AuctionHasNotEnded();
+        }
+
+        // Reserve Price was met and there is a winner.
+        if (s_auctionBids[auctionId].length > 0) {
+            address winner = _pickWinner(auctionId);
+            if (msg.sender == winner) {
+                revert EnglishAuction__WinnerCannotWithdrawBid();
+            }
+            _withdrawBid(auctionId, msg.sender);
+        } else {
+            revert EnglishAuction__BidderHasNotBid();
+        }
+    }
 
     /**
      * @notice Seller can end the auction if the reserve price is met. The highest bidder gets the NFT transfered to
@@ -149,6 +175,55 @@ contract EnglishAuction {
      * @param auctionId The id of the auction
      */
     function sellerEndAuction(uint256 auctionId) external { }
+
+    // INTERNAL FUNCTIONS
+
+    /**
+     * @notice Withdraws the bid of a bidder
+     * @dev Validate that the current bidder can withdraw
+     * @param auctionId The id of the auction
+     * @param bidder The address of the bidder
+     */
+    function _withdrawBid(uint256 auctionId, address bidder) internal {
+        uint256 amount = s_bidderAuctions[msg.sender][auctionId];
+        if (amount == 0) {
+            revert EnglishAuction__BidderHasNotBid();
+        }
+
+        s_bidderAuctions[msg.sender][auctionId] = 0;
+        (bool success,) = payable(msg.sender).call{ value: amount }("");
+        if (!success) {
+            revert EnglishAuction__TransferFailed();
+        }
+        emit Withdrawn(auctionId, bidder, amount);
+    }
+
+    /**
+     * @notice Picks the winner of the auction
+     * @notice If two bids are the same, the first one is picked
+     * @dev Validate that a winner should be picked
+     * @param auctionId The id of the auction
+     * @return winner The address of the winner
+     */
+    function _pickWinner(uint256 auctionId) internal returns (address winner) {
+        Auction storage auction = s_auctions[auctionId];
+        if (auction.winner != address(0)) {
+            return auction.winner;
+        }
+        Bid[] storage bids = s_auctionBids[auctionId];
+        if (bids.length == 0) {
+            revert EnglishAuction__AuctionHasNoBids();
+        }
+
+        Bid memory highestBid = bids[0];
+        for (uint256 i = 1; i < bids.length; i++) {
+            if (bids[i].amount > highestBid.amount) {
+                highestBid = bids[i];
+            }
+        }
+        winner = highestBid.bidder;
+        s_auctions[auctionId].winner = winner;
+    }
 
     // EXTERNAL VIEW FUNCTIONS
 
