@@ -43,3 +43,6 @@
 [submodule "stake-together/lib/forge-std"]
 	path = stake-together/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
+[submodule "stake-together/lib/openzeppelin-contracts"]
+	path = stake-together/lib/openzeppelin-contracts
+	url = https://github.com/openzeppelin/openzeppelin-contracts
