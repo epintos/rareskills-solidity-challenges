@@ -88,7 +88,102 @@ contract NFTMarketplaceTest is Test {
         assertEq(nftMarketplaceContract.getNextSaleId(), 1);
     }
 
+    function testSellEmitsEvent() public {
+        vm.startPrank(SELLER);
+        nft.approve(address(nftMarketplaceContract), NFT_TOKEN_ID);
+        vm.expectEmit(true, true, false, false, address(nftMarketplaceContract));
+        emit SaleCreated(0, SELLER);
+        nftMarketplaceContract.sell(address(nft), NFT_TOKEN_ID, MAX_NFT_PRICE, block.timestamp + MAX_EXPIRATION_DAYS);
+        vm.stopPrank();
+    }
+
     // buy
 
+    function testBuyRevertsIfSaleDoesNotExist() public {
+        vm.prank(BUYER);
+        vm.expectRevert(NFTMarketplace.NFTMarketPlace__SaleDoesNotExist.selector);
+        nftMarketplaceContract.buy(0);
+    }
+
+    function testBuyRevertsIfSaleExpired(uint256 _price, uint256 _expirationTimestamp) public {
+        (uint256 saleId,, uint256 expirationTimestamp) = createSale(_price, _expirationTimestamp);
+        vm.prank(BUYER);
+        vm.warp(expirationTimestamp + 1);
+        vm.expectRevert(NFTMarketplace.NFTMarketPlace__SaleHasExpired.selector);
+        nftMarketplaceContract.buy(saleId);
+    }
+
+    function testBuyRevetsIfPaymentAmountIsTooLow(uint256 _price, uint256 _expirationTimestamp) public {
+        (uint256 saleId, uint256 price,) = createSale(_price, _expirationTimestamp);
+        vm.prank(BUYER);
+        vm.expectRevert(NFTMarketplace.NFTMarketPlace__PaymentAmoutIsTooLow.selector);
+        nftMarketplaceContract.buy{ value: price - 1 }(saleId);
+    }
+
+    function testBuyRevertsIfSellerBuysOwnNFT(uint256 _price, uint256 _expirationTimestamp) public {
+        (uint256 saleId, uint256 price,) = createSale(_price, _expirationTimestamp);
+        vm.deal(SELLER, price);
+        vm.prank(SELLER);
+        vm.expectRevert(NFTMarketplace.NFTMarketPlace__SellerCannotBuyOwnNFT.selector);
+        nftMarketplaceContract.buy{ value: price }(saleId);
+    }
+
+    function testBuyRemovesSale(uint256 _price, uint256 _expirationTimestamp) public {
+        (uint256 saleId, uint256 price,) = createSale(_price, _expirationTimestamp);
+        vm.prank(BUYER);
+        nftMarketplaceContract.buy{ value: price }(saleId);
+        NFTMarketplace.Sale memory sale = nftMarketplaceContract.getSale(saleId);
+        assertEq(sale.exists, false);
+    }
+
+    function testBuyCompletesSale(uint256 _price, uint256 _expirationTimestamp) public {
+        (uint256 saleId, uint256 price,) = createSale(_price, _expirationTimestamp);
+        vm.prank(BUYER);
+        nftMarketplaceContract.buy{ value: price }(saleId);
+        assertEq(nft.ownerOf(NFT_TOKEN_ID), BUYER);
+        assertEq(address(SELLER).balance, price);
+    }
+
+    function testBuyFailsIfNFTIsSelledTwice(uint256 _price, uint256 _expirationTimestamp) public {
+        (uint256 saleId, uint256 price, uint256 expirationTimestamp) = createSale(_price, _expirationTimestamp);
+        uint256 saleId2 = nftMarketplaceContract.sell(address(nft), NFT_TOKEN_ID, price, expirationTimestamp);
+        vm.prank(BUYER);
+        nftMarketplaceContract.buy{ value: price }(saleId);
+
+        address BUYER_2 = makeAddr("BUYER_2");
+        vm.deal(BUYER_2, price);
+        vm.prank(BUYER_2);
+        vm.expectRevert("WRONG_FROM");
+        nftMarketplaceContract.buy{ value: price }(saleId2);
+    }
+
+    function testBuyEmitsEvent(uint256 _price, uint256 _expirationTimestamp) public {
+        (uint256 saleId, uint256 price,) = createSale(_price, _expirationTimestamp);
+        vm.prank(BUYER);
+        vm.expectEmit(true, true, false, false, address(nftMarketplaceContract));
+        emit SaleCompleted(saleId, SELLER, price);
+        nftMarketplaceContract.buy{ value: price }(saleId);
+    }
+
     // cancel
+    function testCancelRevertsIfSaleDoesNotExist() public {
+        vm.prank(SELLER);
+        vm.expectRevert(NFTMarketplace.NFTMarketPlace__SaleDoesNotExist.selector);
+        nftMarketplaceContract.cancel(0);
+    }
+
+    function testCancelRevertsIfUserIsNotSeller(uint256 _price, uint256 _expirationTimestamp) public {
+        (uint256 saleId, uint256 price,) = createSale(_price, _expirationTimestamp);
+        vm.prank(BUYER);
+        vm.expectRevert(NFTMarketplace.NFTMarketPlace__OnlySellerCanCancelSale.selector);
+        nftMarketplaceContract.cancel(saleId);
+    }
+
+    function testCancelCancelsTheSale(uint256 _price, uint256 _expirationTimestamp) public {
+        (uint256 saleId, uint256 price,) = createSale(_price, _expirationTimestamp);
+        vm.prank(SELLER);
+        nftMarketplaceContract.cancel(saleId);
+        NFTMarketplace.Sale memory sale = nftMarketplaceContract.getSale(saleId);
+        assertEq(sale.exists, false);
+    }
 }

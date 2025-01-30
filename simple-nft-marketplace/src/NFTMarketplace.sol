@@ -55,7 +55,8 @@ contract NFTMarketplace {
      * @param expirationTimestamp The timestamp when the sale will expire
      * @return saleId The ID of the sale
      * @notice Known issue: The seller could try to sell the same NFT twice. As an improvement, we could add a mapping
-     * of the seller's NFTs to check if the NFT is already for sale.
+     * of the seller's NFTs to check if the NFT is already for sale. Right now the second buy will sell since the seller
+     * doesn't own the NFT anymore.
      */
     function sell(
         address nftAddress,
@@ -124,6 +125,7 @@ contract NFTMarketplace {
 
     /**
      * @notice Cancels a sale at any time
+     * @notice The seller should revoke the approval of this contract
      * @param saleId The ID of the sale
      */
     function cancel(uint256 saleId) external {
@@ -137,7 +139,6 @@ contract NFTMarketplace {
         address nftAddress = sale.nftAddress;
         uint256 tokenId = sale.tokenId;
         delete s_sales[saleId];
-        IERC721(nftAddress).approve(address(0), tokenId);
         emit SaleCanceled(saleId, msg.sender);
     }
 
