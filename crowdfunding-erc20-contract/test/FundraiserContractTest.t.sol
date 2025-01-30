@@ -82,7 +82,7 @@ abstract contract FundraiserContractTest is Test {
         (uint256 fundraiserId, uint256 goal, uint256 deadline) = createRandomFundraiser(_goal, _deadline);
         FundraiserContract.Fundraiser memory fundraiser = fundraiserContract.getFundraiser(fundraiserId);
         assertEq(fundraiser.goal, goal);
-        assertEq(fundraiser.deadline, block.timestamp + deadline);
+        assertEq(fundraiser.deadline, deadline);
         assertEq(fundraiser.amountRaised, 0);
         assertEq(fundraiser.creator, CREATOR);
         assertEq(fundraiserContract.getFundraiserQuantity(), 1);
@@ -112,7 +112,7 @@ abstract contract FundraiserContractTest is Test {
     function testDepositRevertsIfDeadlineHasPassed(uint256 _goal, uint256 _deadline) public {
         (uint256 fundraiserId, uint256 goal, uint256 deadline) = createRandomFundraiser(_goal, _deadline);
         vm.prank(DONATOR);
-        vm.warp(block.timestamp + deadline + 1);
+        vm.warp(deadline + 1);
         vm.expectRevert(FundraiserContract.FundraiserContract__CannotDepositAfterDeadline.selector);
         makeDeposit(fundraiserId, goal);
     }
@@ -167,7 +167,7 @@ abstract contract FundraiserContractTest is Test {
         vm.prank(DONATOR);
         makeDeposit(fundraiserId, goal);
 
-        vm.warp(block.timestamp + deadline + 1);
+        vm.warp(deadline + 1);
 
         vm.startPrank(CREATOR);
         fundraiserContract.withdraw(fundraiserId);
@@ -179,7 +179,7 @@ abstract contract FundraiserContractTest is Test {
     function testWithdrawForCreatorRevertsIfGoalNotMet(uint256 _goal, uint256 _deadline) public {
         (uint256 fundraiserId,, uint256 deadline) = createRandomFundraiser(_goal, _deadline);
 
-        vm.warp(block.timestamp + deadline + 1);
+        vm.warp(deadline + 1);
 
         vm.startPrank(CREATOR);
         vm.expectRevert(FundraiserContract.FundraiserContract__CreatorCannotWithdrawGoalNotMet.selector);
@@ -191,7 +191,7 @@ abstract contract FundraiserContractTest is Test {
         vm.prank(DONATOR);
         makeDeposit(fundraiserId, goal);
 
-        vm.warp(block.timestamp + deadline + 1);
+        vm.warp(deadline + 1);
 
         vm.prank(DONATOR);
         vm.expectRevert(FundraiserContract.FundraiserContract__DonatorCannotWithdrawGoalMet.selector);
@@ -200,7 +200,7 @@ abstract contract FundraiserContractTest is Test {
 
     function testWithdrawRevetsIfDonatorDoesNotHaveDonation(uint256 _goal, uint256 _deadline) public {
         (uint256 fundraiserId,, uint256 deadline) = createRandomFundraiser(_goal, _deadline);
-        vm.warp(block.timestamp + deadline + 1);
+        vm.warp(deadline + 1);
 
         vm.prank(DONATOR);
         vm.expectRevert(FundraiserContract.FundraiserContract__NoAmountLeftToWithdraw.selector);
@@ -213,7 +213,7 @@ abstract contract FundraiserContractTest is Test {
         makeDeposit(fundraiserId, goal / 2);
         makeDeposit(fundraiserId, goal / 2 - 1);
 
-        vm.warp(block.timestamp + deadline + 1);
+        vm.warp(deadline + 1);
 
         vm.expectEmit(true, false, false, false, address(fundraiserContract));
         emit Withdrawn(DONATOR, fundraiserId);
@@ -228,7 +228,7 @@ abstract contract FundraiserContractTest is Test {
         vm.prank(DONATOR);
         makeDeposit(fundraiserId, goal);
 
-        vm.warp(block.timestamp + deadline + 1);
+        vm.warp(deadline + 1);
 
         vm.prank(CREATOR);
         vm.expectEmit(true, false, false, false, address(fundraiserContract));

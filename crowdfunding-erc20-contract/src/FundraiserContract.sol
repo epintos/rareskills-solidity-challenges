@@ -158,12 +158,12 @@ contract FundraiserContract {
     /**
      * @notice Create a fundraiser
      * @param goal Fundraiser goal
-     * @param deadline Fundraiser deadline in days
+     * @param deadline Fundraiser deadline
      * @param token 0x0 for ETH, ERC20 token address otherwise
      * @return fundraiserId Fundraiser id
      */
     function _createFundraiser(uint256 goal, uint256 deadline, address token) internal returns (uint256 fundraiserId) {
-        if (block.timestamp + deadline <= block.timestamp) {
+        if (deadline <= block.timestamp) {
             revert FundraiserContract__DeadlineCannotBeInThePast();
         }
 

@@ -41,9 +41,8 @@ contract ERC20FundraiserContractTest is FundraiserContractTest {
         deadline = bound(deadline, DEADLINE_MIN, DEADLINE_MAX);
 
         vm.prank(CREATOR);
-        uint256 fundraiserId = ERC20FundraiserContract(address(fundraiserContract)).createFundraiser(
-            goal, block.timestamp + deadline, address(token)
-        );
+        uint256 fundraiserId =
+            ERC20FundraiserContract(address(fundraiserContract)).createFundraiser(goal, deadline, address(token));
         return (fundraiserId, goal, deadline);
     }
 

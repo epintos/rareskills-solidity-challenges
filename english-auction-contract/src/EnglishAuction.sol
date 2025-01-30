@@ -67,7 +67,7 @@ contract EnglishAuction {
      * @notice Deposit an NFT and starts an auction
      * @param nftAddress The address of the NFT contract
      * @param nftTokenId The token id of the NFT
-     * @param deadline The deadline of the auction in days
+     * @param deadline The deadline of the auction in timestamp
      * @param reservePrice The minium price the bidding price should reach
      * @return auctionId The id of the auction
      */
@@ -84,7 +84,7 @@ contract EnglishAuction {
             revert EnglishAuction__AddressCannotBeZero();
         }
 
-        if (block.timestamp + deadline <= block.timestamp) {
+        if (deadline <= block.timestamp) {
             revert EnglishAuction__AuctionDeadlineCannotBeInThePast();
         }
 
@@ -97,7 +97,7 @@ contract EnglishAuction {
             seller: msg.sender,
             nftAddress: nftAddress,
             nftTokenId: nftTokenId,
-            deadline: block.timestamp + deadline,
+            deadline: deadline,
             reservePrice: reservePrice,
             winner: address(0)
         });

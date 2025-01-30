@@ -35,8 +35,7 @@ contract ETHFundraiserContractTest is FundraiserContractTest {
         deadline = bound(deadline, DEADLINE_MIN, DEADLINE_MAX);
 
         vm.prank(CREATOR);
-        uint256 fundraiserId =
-            ETHFundraiserContract(address(fundraiserContract)).createFundraiser(goal, block.timestamp + deadline);
+        uint256 fundraiserId = ETHFundraiserContract(address(fundraiserContract)).createFundraiser(goal, deadline);
         return (fundraiserId, goal, deadline);
     }
 

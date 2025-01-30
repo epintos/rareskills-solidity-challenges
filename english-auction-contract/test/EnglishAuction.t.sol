@@ -51,7 +51,7 @@ contract EnglishAuctionTest is Test {
         returns (uint256 auctionId, uint256 reservePrice, uint256 deadline)
     {
         reservePrice = bound(_reservePrice, MIN_RESERVE_PRICE, MAX_RESERVE_PRICE);
-        deadline = bound(_deadline, MIN_DEADLINE, MAX_DEADLINE);
+        deadline = bound(_deadline, block.timestamp + MIN_DEADLINE, block.timestamp + MAX_DEADLINE);
         vm.startPrank(SELLER);
         nft.approve(address(auctionContract), NFT_TOKEN_ID);
         auctionId = auctionContract.deposit(address(nft), NFT_TOKEN_ID, deadline, reservePrice);
@@ -84,7 +84,7 @@ contract EnglishAuctionTest is Test {
         assertEq(auctionData.seller, SELLER);
         assertEq(auctionData.nftAddress, address(nft));
         assertEq(auctionData.nftTokenId, NFT_TOKEN_ID);
-        assertEq(auctionData.deadline, block.timestamp + deadline);
+        assertEq(auctionData.deadline, deadline);
         assertEq(auctionData.reservePrice, reservePrice);
         assertEq(auctionContract.getAuctionQuantity(), 1);
     }
@@ -127,7 +127,7 @@ contract EnglishAuctionTest is Test {
 
     function testBidRevertsIfDeadlineHasPassed(uint256 _reservePrice, uint256 _deadline) public {
         (uint256 auctionId, uint256 reservePrice, uint256 deadline) = depositNFT(_reservePrice, _deadline);
-        vm.warp(block.timestamp + deadline + 1 days);
+        vm.warp(deadline + 1 days);
         vm.prank(BIDDER_1);
         vm.expectRevert(EnglishAuction.EnglishAuction__AuctionHasEnded.selector);
         auctionContract.bid{ value: reservePrice }(auctionId);
@@ -170,7 +170,7 @@ contract EnglishAuctionTest is Test {
 
     function testWithdrawRevertsIfThereAreNoWinners(uint256 _reservePrice, uint256 _deadline) public {
         (uint256 auctionId,, uint256 deadline) = depositNFT(_reservePrice, _deadline);
-        vm.warp(block.timestamp + deadline + 1 days);
+        vm.warp(deadline + 1 days);
         vm.prank(BIDDER_1);
         vm.expectRevert(EnglishAuction.EnglishAuction__BidderHasNotBid.selector);
         auctionContract.withdraw(auctionId);
@@ -182,7 +182,7 @@ contract EnglishAuctionTest is Test {
         auctionContract.bid{ value: reservePrice + 1 }(auctionId);
         vm.prank(BIDDER_2);
         auctionContract.bid{ value: reservePrice + 1 }(auctionId);
-        vm.warp(block.timestamp + deadline + 1 days);
+        vm.warp(deadline + 1 days);
         vm.prank(BIDDER_1);
         vm.expectRevert(EnglishAuction.EnglishAuction__WinnerCannotWithdrawBid.selector);
         auctionContract.withdraw(auctionId);
@@ -194,7 +194,7 @@ contract EnglishAuctionTest is Test {
         auctionContract.bid{ value: reservePrice + 1 }(auctionId);
         vm.prank(BIDDER_2);
         auctionContract.bid{ value: reservePrice + 2 }(auctionId);
-        vm.warp(block.timestamp + deadline + 1 days);
+        vm.warp(deadline + 1 days);
         uint256 initialBidderBalance = address(BIDDER_1).balance;
         uint256 initialContractBalance = address(auctionContract).balance;
 
@@ -220,7 +220,7 @@ contract EnglishAuctionTest is Test {
 
     function testSellerEndAuctionRevertsIfThereAreNoWinners(uint256 _reservePrice, uint256 _deadline) public {
         (uint256 auctionId,, uint256 deadline) = depositNFT(_reservePrice, _deadline);
-        vm.warp(block.timestamp + deadline + 1 days);
+        vm.warp(deadline + 1 days);
         vm.prank(SELLER);
         vm.expectRevert(EnglishAuction.EnglishAuction__AuctionReservePriceNotMet.selector);
         auctionContract.sellerEndAuction(auctionId);
@@ -230,7 +230,7 @@ contract EnglishAuctionTest is Test {
         (uint256 auctionId, uint256 reservePrice, uint256 deadline) = depositNFT(_reservePrice, _deadline);
         vm.prank(BIDDER_1);
         auctionContract.bid{ value: reservePrice + 1 }(auctionId);
-        vm.warp(block.timestamp + deadline + 1 days);
+        vm.warp(deadline + 1 days);
         vm.prank(BIDDER_1);
         vm.expectRevert(EnglishAuction.EnglishAuction__SenderIsNotSeller.selector);
         auctionContract.sellerEndAuction(auctionId);
@@ -240,7 +240,7 @@ contract EnglishAuctionTest is Test {
         (uint256 auctionId, uint256 reservePrice, uint256 deadline) = depositNFT(_reservePrice, _deadline);
         vm.prank(BIDDER_1);
         auctionContract.bid{ value: reservePrice + 1 }(auctionId);
-        vm.warp(block.timestamp + deadline + 1 days);
+        vm.warp(deadline + 1 days);
         uint256 initialSellerBalance = address(SELLER).balance;
         uint256 initialContractBalance = address(auctionContract).balance;
 
