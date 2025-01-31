@@ -24,6 +24,7 @@ contract StakeTogether is Ownable {
     error StakeTogether__StakingNotActive();
     error StakeTogether__StakingPeriodEnded();
     error StakeTogether__StakingPeriodAlreadyStarted();
+    error StakeTogether__NoStakedAmount();
 
     /// TYPE DECLARATIONS
     struct Staking {
@@ -120,8 +121,14 @@ contract StakeTogether is Ownable {
         uint256 amount = s_stakedAmounts[msg.sender];
         uint256 rewards = 0;
 
+        if (amount == 0) {
+            revert StakeTogether__NoStakedAmount();
+        }
+
         if (block.timestamp > s_staking.endDateTimestamp) {
             rewards = _calculateRewards(msg.sender);
+        } else {
+            s_staking.amount -= amount;
         }
 
         i_erc20Token.transfer(msg.sender, amount + rewards);
@@ -139,13 +146,9 @@ contract StakeTogether is Ownable {
         if (s_staking.amount == 0) {
             return 0;
         }
-        // Alice staked 5_000
-        // Total staking is 25_000
-        // Initial Supply is 1_000_000
-        // Alice's Rewards Portion is 20% (0.2e18)
-        // Rewards = 0.2e18 * 1_000_000 / 1e18 = 200_000
-        uint256 userPortion = (s_stakedAmounts[user] * PRECISION) / s_staking.amount; // 20% as 0.2e18
-        rewards = (userPortion * s_staking.initialSupply) / PRECISION; // 200_000
+
+        uint256 userPortion = (s_stakedAmounts[user]) / s_staking.amount;
+        rewards = (userPortion * s_staking.initialSupply);
     }
 
     // EXTERNAL VIEW FUNCTIONS
