@@ -265,6 +265,9 @@ contract StakeTogetherTest is Test {
 
         vm.warp(block.timestamp + STAKING_END + 1 seconds);
 
+        assertEq(stakeTogetherContract.getCurrentRewards(USER), 200_000);
+        assertEq(stakeTogetherContract.getCurrentRewards(USER_2), 800_000);
+
         uint256 userInitialSupply = erc20Token.balanceOf(USER);
         uint256 contractInitialSupply = erc20Token.balanceOf(address(stakeTogetherContract));
         vm.prank(USER);

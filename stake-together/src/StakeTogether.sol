@@ -15,6 +15,11 @@ import { console2 } from "forge-std/Script.sol";
  * @notice Users can unstake the ERC20 token at any times but they only get rewards if they lock until the staking
  * period ends.
  * @notice Rewards will start counting when the staking period starts.
+ * @notice Known issue: Malicious creator can override the current staking leaving all deposits locked. We should give
+ * the users a period to unstake their tokens before a new staking can be set.
+ * @notice Known issue: The owner could remove the funds from the contract and the users would lose their staked tokens.
+ * @notice Known issue: The PRECISION might not be ideal for all cases. For example: if the staking of a user is too
+ * small in comparison to the total staking amount.
  */
 contract StakeTogether is Ownable {
     /// ERRORS
@@ -147,8 +152,8 @@ contract StakeTogether is Ownable {
             return 0;
         }
 
-        uint256 userPortion = (s_stakedAmounts[user]) / s_staking.amount;
-        rewards = (userPortion * s_staking.initialSupply);
+        uint256 userPortion = (s_stakedAmounts[user] * PRECISION) / s_staking.amount;
+        rewards = (userPortion * s_staking.initialSupply) / PRECISION;
     }
 
     // EXTERNAL VIEW FUNCTIONS
