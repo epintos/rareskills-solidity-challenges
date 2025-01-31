@@ -39,6 +39,15 @@ contract StakeTogetherTest is Test {
         _;
     }
 
+    modifier userStaked(uint256 amount) {
+        vm.startPrank(USER);
+        amount = bound(amount, MININUM_STAKING_AMOUNT, USER_INITIAL_SUPPLY);
+        erc20Token.approve(address(stakeTogetherContract), amount);
+        stakeTogetherContract.stake(amount);
+        vm.stopPrank();
+        _;
+    }
+
     // constructor
     function testConstructorSetsOwner() public view {
         assertEq(address(stakeTogetherContract.owner()), DEPLOYER);
@@ -101,7 +110,7 @@ contract StakeTogetherTest is Test {
         stakeCreated(beginDays, endDays)
     {
         StakeTogether.Staking memory staking = stakeTogetherContract.getStaking();
-        vm.warp(staking.beginDateTimestamp + 1 days);
+        vm.warp(staking.beginDateTimestamp + 1 seconds);
         vm.prank(USER);
         vm.expectRevert(StakeTogether.StakeTogether__StakingPeriodAlreadyStarted.selector);
         stakeTogetherContract.stake(USER_INITIAL_SUPPLY);
@@ -115,7 +124,7 @@ contract StakeTogetherTest is Test {
         stakeCreated(beginDays, endDays)
     {
         StakeTogether.Staking memory staking = stakeTogetherContract.getStaking();
-        vm.warp(staking.endDateTimestamp + 1 days);
+        vm.warp(staking.endDateTimestamp + 1 seconds);
         vm.prank(USER);
         vm.expectRevert(StakeTogether.StakeTogether__StakingPeriodEnded.selector);
         stakeTogetherContract.stake(USER_INITIAL_SUPPLY);
@@ -135,7 +144,6 @@ contract StakeTogetherTest is Test {
         uint256 userInitialSupply = erc20Token.balanceOf(USER);
         erc20Token.approve(address(stakeTogetherContract), stakingAmount * 2);
         stakeTogetherContract.stake(stakingAmount);
-        vm.warp(staking.beginDateTimestamp + 12 hours);
         stakeTogetherContract.stake(stakingAmount);
 
         staking = stakeTogetherContract.getStaking();
@@ -162,4 +170,6 @@ contract StakeTogetherTest is Test {
         stakeTogetherContract.stake(stakingAmount);
         vm.stopPrank();
     }
+
+    // unstake
 }

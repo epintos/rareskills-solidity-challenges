@@ -11,9 +11,9 @@ import { console2 } from "forge-std/Script.sol";
  * @author Esteban Pintos
  * @notice A contract to stake an ERC20 token and earn rewards.
  * @notice The owner of the contract can start a staking period and set the the duration.
- * @notice Users can stake an ERC20 token before the staking period begins until 24 hours after it starts.
- * @notice Users can unstake the ERC20 token at any times but they only get rewards if they lock their tokens at least
- * one day after the staking period ends.
+ * @notice Users can stake an ERC20 token before the staking period begins.
+ * @notice Users can unstake the ERC20 token at any times but they only get rewards if they lock until the staking
+ * period ends.
  * @notice Rewards will start counting when the staking period starts.
  */
 contract StakeTogether is Ownable {
@@ -84,8 +84,8 @@ contract StakeTogether is Ownable {
 
     /**
      * @notice Stakes an amount of ERC20 tokens.
-     * @notice User can stake an amount of ERC20 tokens before the staking period begins until 24 hours after it starts,
-     * but rewards will start counting when the staking period starts.
+     * @notice User can stake an amount of ERC20 tokens before the staking period begins, but rewards will start
+     * counting when the staking period starts.
      * @param amount The amount of ERC20 tokens to stake.
      */
     function stake(uint256 amount) external {
@@ -94,16 +94,10 @@ contract StakeTogether is Ownable {
         }
 
         // They can stake on the same date of the beginning and ending
-        if (
-            block.timestamp > s_staking.beginDateTimestamp
-                && (block.timestamp - s_staking.beginDateTimestamp) / 1 days >= 1
-                && block.timestamp < s_staking.endDateTimestamp
-        ) {
+        if (block.timestamp > s_staking.beginDateTimestamp && block.timestamp < s_staking.endDateTimestamp) {
             revert StakeTogether__StakingPeriodAlreadyStarted();
         }
-        if (
-            block.timestamp > s_staking.endDateTimestamp && (block.timestamp - s_staking.endDateTimestamp) / 1 days >= 1
-        ) {
+        if (block.timestamp > s_staking.endDateTimestamp) {
             revert StakeTogether__StakingPeriodEnded();
         }
 
@@ -115,7 +109,8 @@ contract StakeTogether is Ownable {
 
     /**
      * @notice Unstakes all the amount of ERC20 tokens that the user has staked with the rewards.
-     * @notice User can unstake the amount of ERC20 tokens after the staking period ends.
+     * @notice User can unstake the amount of ERC20 tokens at any time, but rewards will only be given if the user
+     * locks the tokens at least one day after the staking period ends.
      */
     function unstake() external {
         if (!s_staking.active) {
@@ -125,7 +120,7 @@ contract StakeTogether is Ownable {
         uint256 amount = s_stakedAmounts[msg.sender];
         uint256 rewards = 0;
 
-        if ((block.timestamp - s_staking.endDateTimestamp) / 1 days >= 1) {
+        if (block.timestamp > s_staking.endDateTimestamp) {
             rewards = _calculateRewards(msg.sender);
         }
 
