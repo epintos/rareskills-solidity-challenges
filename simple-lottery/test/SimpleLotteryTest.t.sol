@@ -58,6 +58,11 @@ contract SimpleLotteryTest is Test {
         lotteryId = simpleLottery.createLottery(deadline, pickWinnerDelay, ticketPrice);
     }
 
+    function enterLottery(address user, uint256 lotteryId, uint256 ticketPrice) public {
+        vm.prank(user);
+        simpleLottery.enterLottery{ value: ticketPrice }(lotteryId);
+    }
+
     // createLottery
     function testCreateLotteryRevertsIfDeadlineIsInThePast() public {
         vm.expectRevert(SimpleLottery.SimpleLottery__DeadlineCannotBeInThePast.selector);
@@ -99,5 +104,76 @@ contract SimpleLotteryTest is Test {
         vm.expectEmit(true, false, false, false, address(simpleLottery));
         emit LotteryCreated(0, block.timestamp + MIN_DEADLINE, MIN_TICKET_PRICE, MIN_PICK_WINNER_DELAY);
         simpleLottery.createLottery(block.timestamp + MIN_DEADLINE, MIN_PICK_WINNER_DELAY, MIN_TICKET_PRICE);
+    }
+
+    // enterLottery
+    function testEnterLotteryRevertsIfLotteryDoesNotExist() public {
+        vm.expectRevert(SimpleLottery.SimpleLottery__LotteryDoesNotExist.selector);
+        simpleLottery.enterLottery(0);
+    }
+
+    function testEnterLotteryRevertsIfDeadlineReached(
+        uint256 _deadline,
+        uint256 _pickWinnerDelay,
+        uint256 _ticketPrice
+    )
+        public
+    {
+        (uint256 deadline,,, uint256 lotteryId) = createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
+        vm.warp(deadline + 1);
+        vm.expectRevert(SimpleLottery.SimpleLottery__LotteryDeadlineReached.selector);
+        simpleLottery.enterLottery(lotteryId);
+    }
+
+    function testEnterLotteryRevertsIfInvalidTicketPrice(
+        uint256 _deadline,
+        uint256 _pickWinnerDelay,
+        uint256 _ticketPrice
+    )
+        public
+    {
+        (,,, uint256 lotteryId) = createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
+        vm.expectRevert(SimpleLottery.SimpleLottery__InvalidTicketPrice.selector);
+        simpleLottery.enterLottery{ value: 0 }(lotteryId);
+    }
+
+    function testEnterLotteryRevertsIfUserAlreadyBoughtTicket(
+        uint256 _deadline,
+        uint256 _pickWinnerDelay,
+        uint256 _ticketPrice
+    )
+        public
+    {
+        (,, uint256 ticketPrice, uint256 lotteryId) = createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
+        enterLottery(PARTICIPANT_1, lotteryId, ticketPrice);
+
+        vm.deal(PARTICIPANT_1, ticketPrice);
+        vm.expectRevert(SimpleLottery.SimpleLottery__UserAlreadyEntered.selector);
+        enterLottery(PARTICIPANT_1, lotteryId, ticketPrice);
+    }
+
+    function testEnterLotteryPurchasesTicket(
+        uint256 _deadline,
+        uint256 _pickWinnerDelay,
+        uint256 _ticketPrice
+    )
+        public
+    {
+        (,, uint256 ticketPrice, uint256 lotteryId) = createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
+        enterLottery(PARTICIPANT_1, lotteryId, ticketPrice);
+
+        SimpleLottery.Lottery memory lottery = simpleLottery.getLottery(lotteryId);
+        assertEq(lottery.participants.length, 1);
+        assertEq(lottery.participants[0], PARTICIPANT_1);
+        assertEq(lottery.totalPrize, ticketPrice);
+        assertEq(address(simpleLottery).balance, ticketPrice);
+        assertEq(simpleLottery.getUserEnteredLottery(PARTICIPANT_1, lotteryId), true);
+    }
+
+    function testEnterLotteryEmitsEvent(uint256 _deadline, uint256 _pickWinnerDelay, uint256 _ticketPrice) public {
+        (,, uint256 ticketPrice, uint256 lotteryId) = createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
+        vm.expectEmit(true, false, false, false, address(simpleLottery));
+        emit LotteryTicketPurchased(lotteryId, PARTICIPANT_1);
+        enterLottery(PARTICIPANT_1, lotteryId, ticketPrice);
     }
 }

@@ -211,11 +211,12 @@ contract SimpleLottery {
 
     /**
      * @notice Returns true if the user has entered the lottery with the given id.
+     * @param user The address of the user to check if has entered the lottery.
      * @param lotteryId The id of the lottery to check the tickets from.
      * @return True if the user has entered the lottery with the given id.
      */
-    function getUserEnteredLotery(uint256 lotteryId) external view returns (bool) {
-        return s_userLotteries[msg.sender][lotteryId];
+    function getUserEnteredLottery(address user, uint256 lotteryId) external view returns (bool) {
+        return s_userLotteries[user][lotteryId];
     }
 
     /**
