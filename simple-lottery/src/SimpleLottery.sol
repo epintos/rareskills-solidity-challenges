@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.28;
 
+import { console2 } from "forge-std/Script.sol";
+
 /**
  * @title SimpleLottery
  * @author Esteban Pintos
@@ -64,16 +66,16 @@ contract SimpleLottery {
     /**
      * @notice Creates a new lottery with the given parameters.
      * @param deadline The deadline to enter the lottery.
-     * @param ticketPrice The price of each ticket.
      * @param pickWinnerDelay The delay to pick the winner after the deadline. The blockhash of the block number after
+     * @param ticketPrice The price of each ticket.
      * this
      * will be used to pick the winning number. The block number is estimated using the average block time.
      * @return lotteryId The id of the created lottery.
      */
     function createLottery(
         uint256 deadline,
-        uint256 ticketPrice,
-        uint256 pickWinnerDelay
+        uint256 pickWinnerDelay,
+        uint256 ticketPrice
     )
         external
         returns (uint256 lotteryId)
@@ -89,7 +91,6 @@ contract SimpleLottery {
         if (pickWinnerDelay < MIN_WINNER_PICK_DELAY) {
             revert SimpleLottery__PickWinnerDelayTooShort();
         }
-
         lotteryId = s_nextLotteryId;
         s_lotteries[lotteryId] = Lottery({
             exists: true,
@@ -98,7 +99,7 @@ contract SimpleLottery {
             ticketPrice: ticketPrice,
             pickWinnerDelay: pickWinnerDelay,
             participants: new address[](0),
-            winningBlockNumber: block.number + ((deadline + MIN_WINNER_PICK_DELAY - block.timestamp) / AVERAGE_BLOCK_TIME),
+            winningBlockNumber: block.number + ((deadline + pickWinnerDelay - block.timestamp) / AVERAGE_BLOCK_TIME),
             winnerCannotBeClaimed: false,
             winner: address(0)
         });
