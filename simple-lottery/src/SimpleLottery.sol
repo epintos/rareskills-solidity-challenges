@@ -26,11 +26,12 @@ contract SimpleLottery {
     error SimpleLottery__LotteryDeadlineReached();
     error SimpleLottery__InvalidTicketPrice();
     error SimpleLottery__UserAlreadyEntered();
-    error SimpleLottery__LotteryWinnerNotPickedYet();
+    error SimpleLottery__LotteryWinnerCannotBePickedYet();
     error SimpleLottery__LotteryHasNoParticipants();
     error SimpleLottery__WinnerCannotBePickedAnymore();
     error SimpleLottery__TransferFailed();
     error SimpleLottery__OnlyWinnerCanWithdrawThePrize();
+    error SimpleLottery__WinnerAlreadyPaid();
 
     /// TYPE DECLARATIONS
     struct Lottery {
@@ -41,8 +42,7 @@ contract SimpleLottery {
         uint256 pickWinnerDelay;
         address[] participants;
         uint256 winningBlockNumber;
-        bool winnerCannotBeClaimed;
-        address winner;
+        bool winnerPaid;
     }
 
     /// STATE VARIABLES
@@ -56,7 +56,6 @@ contract SimpleLottery {
     /// EVENTS
     event LotteryCreated(uint256 indexed lotteryId, uint256 deadline, uint256 ticketPrice, uint256 pickWinnerDelay);
     event LotteryTicketPurchased(uint256 lotteryId, address indexed user);
-    event LotteryWinnerPicked(uint256 indexed lotteryId, address indexed winner, uint256 prize);
     event LotteryPrizeClaimed(uint256 indexed lotteryId, address indexed winner, uint256 prize);
 
     /// FUNCTIONS
@@ -100,8 +99,7 @@ contract SimpleLottery {
             pickWinnerDelay: pickWinnerDelay,
             participants: new address[](0),
             winningBlockNumber: block.number + ((deadline + pickWinnerDelay - block.timestamp) / AVERAGE_BLOCK_TIME),
-            winnerCannotBeClaimed: false,
-            winner: address(0)
+            winnerPaid: false
         });
         s_nextLotteryId++;
         emit LotteryCreated(lotteryId, deadline, ticketPrice, pickWinnerDelay);
@@ -146,23 +144,22 @@ contract SimpleLottery {
      * @notice The winner needs to withdraw the price within 256 blocks, otherwise, everyone can get their tickets back.
      * @param lotteryId The id of the lottery to withdraw the price from.
      */
-    function withdrawPrice(uint256 lotteryId) external {
+    function withdrawPrize(uint256 lotteryId) external {
         Lottery storage lottery = s_lotteries[lotteryId];
-
         if (!lottery.exists) {
             revert SimpleLottery__LotteryDoesNotExist();
         }
 
-        if (lottery.winnerCannotBeClaimed) {
-            revert SimpleLottery__WinnerCannotBePickedAnymore();
-        }
-
         if (block.timestamp < lottery.deadline + lottery.pickWinnerDelay) {
-            revert SimpleLottery__LotteryWinnerNotPickedYet();
+            revert SimpleLottery__LotteryWinnerCannotBePickedYet();
         }
 
         if (lottery.participants.length == 0) {
             revert SimpleLottery__LotteryHasNoParticipants();
+        }
+
+        if (lottery.winnerPaid) {
+            revert SimpleLottery__WinnerAlreadyPaid();
         }
 
         bytes32 blockhashNumber = blockhash(lottery.winningBlockNumber);
@@ -170,22 +167,16 @@ contract SimpleLottery {
         // 256 blocks have passed since the winner block was mined
         // Winner cannot be picked anymore since the blockhash is not readable anymore
         if (blockhashNumber == bytes32(0)) {
-            s_lotteries[lotteryId].winnerCannotBeClaimed = true;
             revert SimpleLottery__WinnerCannotBePickedAnymore();
         }
-
-        address winner = lottery.winner;
-        if (lottery.winner == address(0)) {
-            uint256 winningNumber = uint256(blockhashNumber) % lottery.participants.length;
-            winner = lottery.participants[winningNumber];
-            s_lotteries[lotteryId].winner = winner;
-            emit LotteryWinnerPicked(lotteryId, winner, lottery.totalPrize);
-        }
+        uint256 winningNumber = uint256(blockhashNumber) % lottery.participants.length;
+        address winner = lottery.participants[winningNumber];
 
         if (msg.sender != winner) {
             revert SimpleLottery__OnlyWinnerCanWithdrawThePrize();
         }
 
+        s_lotteries[lotteryId].winnerPaid = true;
         (bool success,) = payable(winner).call{ value: lottery.totalPrize }("");
         if (!success) {
             revert SimpleLottery__TransferFailed();
