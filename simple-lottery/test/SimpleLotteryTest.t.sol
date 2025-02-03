@@ -228,6 +228,24 @@ contract SimpleLotteryTest is Test {
         simpleLottery.withdrawPrize(lotteryId);
     }
 
+    function testWithdrawPrizeRevertsIfNotEnoughBlocksHavePassed(
+        uint256 _deadline,
+        uint256 _pickWinnerDelay,
+        uint256 _ticketPrice
+    )
+        public
+    {
+        (uint256 deadline, uint256 pickWinnerDelay, uint256 ticketPrice, uint256 lotteryId) =
+            createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
+        uint256 winningBlockNumber = simpleLottery.getLottery(lotteryId).winningBlockNumber;
+        enterLottery(PARTICIPANT_1, lotteryId, ticketPrice);
+        vm.warp(deadline + pickWinnerDelay + 1);
+        vm.roll(winningBlockNumber);
+        vm.prank(PARTICIPANT_1);
+        vm.expectRevert(SimpleLottery.SimpleLottery__LotteryWinnerCannotBePickedYet.selector);
+        simpleLottery.withdrawPrize(lotteryId);
+    }
+
     function testWithdrawPrizeRevertsIfNotWinner(
         uint256 _deadline,
         uint256 _pickWinnerDelay,

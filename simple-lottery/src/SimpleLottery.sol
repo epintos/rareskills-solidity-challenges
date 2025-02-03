@@ -15,7 +15,8 @@ import { console2 } from "forge-std/Script.sol";
  * winner takes more than 256 blocks to claim the prize, the blockhash won't be readable anymore so the winner won't be
  * able to be calculated. This could be improvsed by using something like Chainlink VRF.
  * @notice Known issue: For simplicity the winning block number is calculated using the Ethereum average block time
- * which is a constant value in the contract.
+ * which is a constant value in the contract. The estimation might not be accurate and winner block might be off by a
+ * few blocks.
  */
 contract SimpleLottery {
     /// ERRORS
@@ -151,6 +152,10 @@ contract SimpleLottery {
         }
 
         if (block.timestamp < lottery.deadline + lottery.pickWinnerDelay) {
+            revert SimpleLottery__LotteryWinnerCannotBePickedYet();
+        }
+
+        if (block.number == lottery.winningBlockNumber) {
             revert SimpleLottery__LotteryWinnerCannotBePickedYet();
         }
 
