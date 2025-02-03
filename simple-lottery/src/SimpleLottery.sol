@@ -187,11 +187,11 @@ contract SimpleLottery {
         }
 
         s_lotteries[lotteryId].winnerPaid = true;
+        emit LotteryPrizeClaimed(lotteryId, winner, lottery.totalPrize);
         (bool success,) = payable(winner).call{ value: lottery.totalPrize }("");
         if (!success) {
             revert SimpleLottery__TransferFailed();
         }
-        emit LotteryPrizeClaimed(lotteryId, winner, lottery.totalPrize);
     }
 
     /**
@@ -222,11 +222,11 @@ contract SimpleLottery {
         }
 
         s_userLotteries[msg.sender][lotteryId] = false;
+        emit LotteryTicketRefunded(lotteryId, msg.sender);
         (bool success,) = payable(msg.sender).call{ value: lottery.ticketPrice }("");
         if (!success) {
             revert SimpleLottery__TransferFailed();
         }
-        emit LotteryTicketRefunded(lotteryId, msg.sender);
     }
 
     // EXTERNAL VIEW FUNCTIONS

@@ -109,8 +109,8 @@ contract StakeTogether is Ownable {
 
         s_stakedAmounts[msg.sender] += amount;
         s_staking.amount += amount;
-        i_erc20Token.transferFrom(msg.sender, address(this), amount);
         emit Staked(msg.sender, amount);
+        i_erc20Token.transferFrom(msg.sender, address(this), amount);
     }
 
     /**
@@ -136,9 +136,9 @@ contract StakeTogether is Ownable {
             s_staking.amount -= amount;
         }
 
-        i_erc20Token.transfer(msg.sender, amount + rewards);
         s_stakedAmounts[msg.sender] = 0;
         emit UnStaked(msg.sender, amount, rewards);
+        i_erc20Token.transfer(msg.sender, amount + rewards);
     }
 
     // INTERNAL FUNCTIONS

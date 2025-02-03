@@ -82,7 +82,6 @@ contract FundraiserContract {
         } else {
             _withdrawDonator(fundraiserId);
         }
-        emit Withdrawn(msg.sender, fundraiserId);
     }
 
     // INTERNAL FUNCTIONS
@@ -102,6 +101,8 @@ contract FundraiserContract {
         }
 
         s_fundraisers[fundraiserId].state = FundraiserState.CREATOR_PAID;
+        emit Withdrawn(msg.sender, fundraiserId);
+
         bool success;
         if (fundraiser.token == address(0)) {
             (success,) = msg.sender.call{ value: fundraiser.amountRaised }("");
@@ -128,6 +129,8 @@ contract FundraiserContract {
             revert FundraiserContract__NoAmountLeftToWithdraw();
         }
         delete s_donators[fundraiserId][msg.sender];
+        emit Withdrawn(msg.sender, fundraiserId);
+
         bool success;
         if (fundraiser.token == address(0)) {
             (success,) = msg.sender.call{ value: amountDonated }("");
@@ -149,10 +152,10 @@ contract FundraiserContract {
         _validateDeposit(fundraiserId, amount);
         s_donators[fundraiserId][msg.sender] += amount;
         s_fundraisers[fundraiserId].amountRaised += amount;
+        emit Deposited(msg.sender, fundraiserId, amount);
         if (s_fundraisers[fundraiserId].token != address(0)) {
             ERC20(s_fundraisers[fundraiserId].token).transferFrom(msg.sender, address(this), amount);
         }
-        emit Deposited(msg.sender, fundraiserId, amount);
     }
 
     /**

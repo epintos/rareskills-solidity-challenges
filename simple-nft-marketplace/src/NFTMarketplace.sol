@@ -85,10 +85,10 @@ contract NFTMarketplace {
             seller: msg.sender
         });
         s_nextSaleId++;
+        emit SaleCreated(saleId, msg.sender);
         if (IERC721(nftAddress).getApproved(tokenId) != address(this)) {
             revert NFTMarketPlace__SellerMustApproveTransfer();
         }
-        emit SaleCreated(saleId, msg.sender);
     }
 
     /**
@@ -115,12 +115,12 @@ contract NFTMarketplace {
         uint256 tokenId = sale.tokenId;
         delete s_sales[saleId];
 
+        emit SaleCompleted(saleId, sale.seller, msg.value);
         IERC721(nftAddress).transferFrom(seller, msg.sender, tokenId);
         (bool success,) = payable(seller).call{ value: msg.value }("");
         if (!success) {
             revert NFTMarketPlace__PaymentToSellerFailed();
         }
-        emit SaleCompleted(saleId, sale.seller, msg.value);
     }
 
     /**
@@ -136,8 +136,6 @@ contract NFTMarketplace {
         if (msg.sender != sale.seller) {
             revert NFTMarketPlace__OnlySellerCanCancelSale();
         }
-        address nftAddress = sale.nftAddress;
-        uint256 tokenId = sale.tokenId;
         delete s_sales[saleId];
         emit SaleCanceled(saleId, msg.sender);
     }

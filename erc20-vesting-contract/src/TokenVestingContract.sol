@@ -3,7 +3,6 @@
 pragma solidity ^0.8.28;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import { Test, console2 } from "forge-std/Test.sol";
 
 /**
  * @title TokenVestingContract
@@ -82,12 +81,11 @@ contract TokenVestingContract {
             vestingDays: vestingDays,
             token: token
         });
-        console2.log("token", token);
+        emit Deposit(msg.sender, to, amountInWei, vestingDays);
         (bool success) = ERC20(token).transferFrom(msg.sender, address(this), amountInWei);
         if (!success) {
             revert TokenVestingContract__TransferFailed();
         }
-        emit Deposit(msg.sender, to, amountInWei, vestingDays);
     }
 
     /**
@@ -115,11 +113,11 @@ contract TokenVestingContract {
             s_vestingAgreements[payer][msg.sender].tokensWithdrawnInWei = tokensToWithdraw;
         }
 
+        emit Withdraw(payer, msg.sender, tokensToWithdraw, tokensLeftToWithdraw);
         (bool success) = ERC20(agreement.token).transfer(msg.sender, tokensToWithdraw);
         if (!success) {
             revert TokenVestingContract__TransferFailed();
         }
-        emit Withdraw(payer, msg.sender, tokensToWithdraw, tokensLeftToWithdraw);
     }
 
     /**

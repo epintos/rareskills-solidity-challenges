@@ -103,8 +103,8 @@ contract EnglishAuction is IERC721Receiver {
         });
         s_auctionId++;
 
-        ERC721(nftAddress).safeTransferFrom(msg.sender, address(this), nftTokenId);
         emit Deposited(auctionId, msg.sender);
+        ERC721(nftAddress).safeTransferFrom(msg.sender, address(this), nftTokenId);
     }
 
     /**
@@ -202,13 +202,13 @@ contract EnglishAuction is IERC721Receiver {
         delete s_auctionBids[auctionId];
         delete s_auctions[auctionId];
 
+        emit AuctionEnded(auctionId, winner, amount);
         ERC721(nftAddress).safeTransferFrom(address(this), winner, nftTokenId);
 
         (bool success,) = payable(seller).call{ value: amount }("");
         if (!success) {
             revert EnglishAuction__TransferFailed();
         }
-        emit AuctionEnded(auctionId, winner, amount);
     }
 
     // INTERNAL FUNCTIONS
@@ -226,11 +226,11 @@ contract EnglishAuction is IERC721Receiver {
         }
 
         s_bidderAuctions[msg.sender][auctionId] = 0;
+        emit Withdrawn(auctionId, bidder, amount);
         (bool success,) = payable(msg.sender).call{ value: amount }("");
         if (!success) {
             revert EnglishAuction__TransferFailed();
         }
-        emit Withdrawn(auctionId, bidder, amount);
     }
 
     /**

@@ -129,10 +129,10 @@ contract NFTSwappingContract is IERC721Receiver {
         if (swapAgreement.firstNFTDeposited && swapAgreement.secondNFTDeposited) {
             s_swaps[swapId].state = SwapState.DEPOSITED;
         }
+        emit Deposited(swapId, msg.sender, nftAddress, nftTokenId);
 
         // This will fail if the msg.sender does not own the NFT
         ERC721(nftAddress).safeTransferFrom(msg.sender, address(this), nftTokenId);
-        emit Deposited(swapId, msg.sender, nftAddress, nftTokenId);
     }
 
     /**
@@ -158,9 +158,9 @@ contract NFTSwappingContract is IERC721Receiver {
         uint256 secondNFTTokenId = swapAgreement.secondNFTTokenId;
         address secondNFTOwner = swapAgreement.secondNFTOwner;
         delete s_swaps[swapId];
+        emit SwapComplete(swapId, msg.sender);
         ERC721(firstNFTAddress).safeTransferFrom(address(this), secondNFTOwner, firstNFTTokenId);
         ERC721(secondNFTAddress).safeTransferFrom(address(this), firstNFTOwner, secondNFTTokenId);
-        emit SwapComplete(swapId, msg.sender);
     }
 
     /**
@@ -193,6 +193,7 @@ contract NFTSwappingContract is IERC721Receiver {
 
         s_swaps[swapId].state = SwapState.CREATED;
 
+        emit Withdrawn(swapId, msg.sender);
         if (firstNFTOwner) {
             ERC721(swapAgreement.firstNFTAddress).safeTransferFrom(
                 address(this), msg.sender, swapAgreement.firstNFTTokenId
@@ -202,7 +203,6 @@ contract NFTSwappingContract is IERC721Receiver {
                 address(this), msg.sender, swapAgreement.secondNFTTokenId
             );
         }
-        emit Withdrawn(swapId, msg.sender);
     }
 
     // EXTERNAL VIEW FUNCTIONS
