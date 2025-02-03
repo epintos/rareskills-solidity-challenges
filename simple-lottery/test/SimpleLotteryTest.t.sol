@@ -23,6 +23,7 @@ contract SimpleLotteryTest is Test {
     event LotteryCreated(uint256 indexed lotteryId, uint256 deadline, uint256 ticketPrice, uint256 pickWinnerDelay);
     event LotteryTicketPurchased(uint256 lotteryId, address indexed user);
     event LotteryPrizeClaimed(uint256 indexed lotteryId, address indexed winner, uint256 prize);
+    event LotteryTicketRefunded(uint256 indexed lotteryId, address indexed user);
 
     function setUp() public {
         simpleLottery = new SimpleLottery();
@@ -61,6 +62,15 @@ contract SimpleLotteryTest is Test {
     function enterLottery(address user, uint256 lotteryId, uint256 ticketPrice) public {
         vm.prank(user);
         simpleLottery.enterLottery{ value: ticketPrice }(lotteryId);
+    }
+
+    function prizeWithdrawn(address user, uint256 lotteryId) public {
+        SimpleLottery.Lottery memory lottery = simpleLottery.getLottery(lotteryId);
+        uint256 winningBlockNumber = lottery.winningBlockNumber;
+        vm.warp(lottery.deadline + lottery.pickWinnerDelay + 1);
+        vm.roll(winningBlockNumber + 1);
+        vm.prank(user);
+        simpleLottery.withdrawPrize(lotteryId);
     }
 
     // createLottery
@@ -308,15 +318,10 @@ contract SimpleLotteryTest is Test {
     )
         public
     {
-        (uint256 deadline, uint256 pickWinnerDelay, uint256 ticketPrice, uint256 lotteryId) =
-            createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
-        SimpleLottery.Lottery memory lottery = simpleLottery.getLottery(lotteryId);
-        uint256 winningBlockNumber = lottery.winningBlockNumber;
+        (,, uint256 ticketPrice, uint256 lotteryId) = createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
         enterLottery(PARTICIPANT_1, lotteryId, ticketPrice);
-        vm.warp(deadline + pickWinnerDelay + 1);
-        vm.roll(winningBlockNumber + 1);
-        vm.prank(PARTICIPANT_1);
-        simpleLottery.withdrawPrize(lotteryId);
+        prizeWithdrawn(PARTICIPANT_1, lotteryId);
+
         vm.prank(PARTICIPANT_1);
         vm.expectRevert(SimpleLottery.SimpleLottery__WinnerAlreadyPaid.selector);
         simpleLottery.withdrawPrize(lotteryId);
@@ -326,16 +331,111 @@ contract SimpleLotteryTest is Test {
     }
 
     function testWithdrawEmitsEvent(uint256 _deadline, uint256 _pickWinnerDelay, uint256 _ticketPrice) public {
+        (,, uint256 ticketPrice, uint256 lotteryId) = createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
+        enterLottery(PARTICIPANT_1, lotteryId, ticketPrice);
+        SimpleLottery.Lottery memory lottery = simpleLottery.getLottery(lotteryId);
+        vm.expectEmit(true, false, false, false, address(simpleLottery));
+        emit LotteryPrizeClaimed(lotteryId, PARTICIPANT_1, lottery.totalPrize);
+        prizeWithdrawn(PARTICIPANT_1, lotteryId);
+    }
+
+    // refundTickets
+    function testRefundTicketsRevertsIfLotteryDoesNotExist() public {
+        vm.expectRevert(SimpleLottery.SimpleLottery__LotteryDoesNotExist.selector);
+        simpleLottery.refundTickets(0);
+    }
+
+    function testRefundTicketsRevertsIfWinnerHasBeenPicked(
+        uint256 _deadline,
+        uint256 _pickWinnerDelay,
+        uint256 _ticketPrice
+    )
+        public
+    {
+        (,, uint256 ticketPrice, uint256 lotteryId) = createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
+        enterLottery(PARTICIPANT_1, lotteryId, ticketPrice);
+        prizeWithdrawn(PARTICIPANT_1, lotteryId);
+        vm.expectRevert(SimpleLottery.SimpleLottery__CannotGetRefund.selector);
+        simpleLottery.refundTickets(lotteryId);
+    }
+
+    function testRefundTicketRevertsIfLotteryStillOpen(
+        uint256 _deadline,
+        uint256 _pickWinnerDelay,
+        uint256 _ticketPrice
+    )
+        public
+    {
+        (,,, uint256 lotteryId) = createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
+        vm.expectRevert(SimpleLottery.SimpleLottery__WinnerHasNotBeenPickedYet.selector);
+        simpleLottery.refundTickets(lotteryId);
+    }
+
+    function testRefundTicketRevertsIf256BlocksHaventBeenMinedYet(
+        uint256 _deadline,
+        uint256 _pickWinnerDelay,
+        uint256 _ticketPrice
+    )
+        public
+    {
+        (uint256 deadline, uint256 pickWinnerDelay,, uint256 lotteryId) =
+            createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
+        SimpleLottery.Lottery memory lottery = simpleLottery.getLottery(lotteryId);
+        vm.warp(deadline + pickWinnerDelay + 1);
+        vm.roll(lottery.winningBlockNumber + 1);
+        vm.expectRevert(SimpleLottery.SimpleLottery__WinnerHasNotBeenPickedYet.selector);
+        simpleLottery.refundTickets(lotteryId);
+    }
+
+    function testRefundTicketRevertsIfUserDidNotPurchaseATicket(
+        uint256 _deadline,
+        uint256 _pickWinnerDelay,
+        uint256 _ticketPrice
+    )
+        public
+    {
         (uint256 deadline, uint256 pickWinnerDelay, uint256 ticketPrice, uint256 lotteryId) =
             createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
         enterLottery(PARTICIPANT_1, lotteryId, ticketPrice);
-        SimpleLottery.Lottery memory lottery = simpleLottery.getLottery(lotteryId);
-        uint256 winningBlockNumber = lottery.winningBlockNumber;
         vm.warp(deadline + pickWinnerDelay + 1);
-        vm.roll(winningBlockNumber + 1);
+        vm.roll(simpleLottery.getLottery(lotteryId).winningBlockNumber + 2);
+        vm.prank(PARTICIPANT_2);
+        vm.expectRevert(SimpleLottery.SimpleLottery__UserDoesNotHaveTicketToRefund.selector);
+        simpleLottery.refundTickets(lotteryId);
+    }
+
+    function testRefundTicketTransfersTicketPriceToUser(
+        uint256 _deadline,
+        uint256 _pickWinnerDelay,
+        uint256 _ticketPrice
+    )
+        public
+    {
+        (uint256 deadline, uint256 pickWinnerDelay, uint256 ticketPrice, uint256 lotteryId) =
+            createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
+        enterLottery(PARTICIPANT_1, lotteryId, ticketPrice);
+        uint256 userInitialBalance = address(PARTICIPANT_1).balance;
+        uint256 contractInitialBalance = address(simpleLottery).balance;
+        vm.warp(deadline + pickWinnerDelay + 1);
+        vm.roll(simpleLottery.getLottery(lotteryId).winningBlockNumber + 2);
         vm.prank(PARTICIPANT_1);
-        vm.expectEmit(true, false, false, false, address(simpleLottery));
-        emit LotteryPrizeClaimed(lotteryId, PARTICIPANT_1, lottery.totalPrize);
-        simpleLottery.withdrawPrize(lotteryId);
+        simpleLottery.refundTickets(lotteryId);
+        uint256 userFinalBalance = address(PARTICIPANT_1).balance;
+        uint256 contractFinalBalance = address(simpleLottery).balance;
+        assertEq(userFinalBalance, userInitialBalance + ticketPrice);
+        assertEq(contractFinalBalance, contractInitialBalance - ticketPrice);
+        assertEq(simpleLottery.getUserEnteredLottery(PARTICIPANT_1, lotteryId), false);
+    }
+
+    function testRefundTicketEmitsEvent(uint256 _deadline, uint256 _pickWinnerDelay, uint256 _ticketPrice) public {
+        (uint256 deadline, uint256 pickWinnerDelay, uint256 ticketPrice, uint256 lotteryId) =
+            createRandomLottery(_deadline, _pickWinnerDelay, _ticketPrice);
+        enterLottery(PARTICIPANT_1, lotteryId, ticketPrice);
+        vm.warp(deadline + pickWinnerDelay + 1);
+        vm.roll(simpleLottery.getLottery(lotteryId).winningBlockNumber + 2);
+        vm.prank(PARTICIPANT_1);
+        vm.expectEmit(true, true, false, false, address(simpleLottery));
+        emit LotteryTicketRefunded(lotteryId, PARTICIPANT_1);
+        simpleLottery.refundTickets(lotteryId);
     }
 }

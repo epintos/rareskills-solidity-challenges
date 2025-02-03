@@ -9,12 +9,12 @@ import { console2 } from "forge-std/Script.sol";
  * @author Esteban Pintos
  * @notice Lottery that allows users to purchase lottery tickets and enter the lottery. Once the lottery deadline is
  * reached, the lottery is closed and a winner is selected after a certain delay to make sure a good amount of blocks
- * are minted.
+ * are mined.
  * @notice The winner can claim the prize within 256 blocks, otherwise, everyone can get their tickets back.
- * @notice The lottery random number will be based on the blockhash of the block number after the delay. If the
- * winner takes more than 256 blocks to claim the prize, the blockhash won't be readable anymore so the winner won't be
- * able to be calculated. This could be improvsed by using something like Chainlink VRF.
- * @notice Known issue: For simplicity the winning block number is calculated using the Ethereum average block time
+ * @notice The lottery random number will be based on the blockhash of the block number after the delay (winning block
+ * number). If the winner takes more than 256 blocks to claim the prize, the blockhash won't be readable anymore so the
+ * winner number won't be able to be calculated. This could be improved by using something like Chainlink VRF.
+ * @notice Known issue: For simplicity the winning block number is estimated using the Ethereum average block time
  * which is a constant value in the contract. The estimation might not be accurate and winner block might be off by a
  * few blocks.
  */
@@ -33,6 +33,9 @@ contract SimpleLottery {
     error SimpleLottery__TransferFailed();
     error SimpleLottery__OnlyWinnerCanWithdrawThePrize();
     error SimpleLottery__WinnerAlreadyPaid();
+    error SimpleLottery__CannotGetRefund();
+    error SimpleLottery__WinnerHasNotBeenPickedYet();
+    error SimpleLottery__UserDoesNotHaveTicketToRefund();
 
     /// TYPE DECLARATIONS
     struct Lottery {
@@ -58,6 +61,7 @@ contract SimpleLottery {
     event LotteryCreated(uint256 indexed lotteryId, uint256 deadline, uint256 ticketPrice, uint256 pickWinnerDelay);
     event LotteryTicketPurchased(uint256 lotteryId, address indexed user);
     event LotteryPrizeClaimed(uint256 indexed lotteryId, address indexed winner, uint256 prize);
+    event LotteryTicketRefunded(uint256 indexed lotteryId, address indexed user);
 
     /// FUNCTIONS
 
@@ -143,6 +147,7 @@ contract SimpleLottery {
      * @notice The user can only withdraw the price if the lottery has ended and the delay to pick the winner has
      * passed.
      * @notice The winner needs to withdraw the price within 256 blocks, otherwise, everyone can get their tickets back.
+     * @notice Known issue: The lottery struct could be deleted after the winner withdraws the prize
      * @param lotteryId The id of the lottery to withdraw the price from.
      */
     function withdrawPrize(uint256 lotteryId) external {
@@ -193,7 +198,36 @@ contract SimpleLottery {
      * @notice Refunds the tickets of a lottery if the winner hasn't claimed the prize within 256 blocks.
      * @param lotteryId The id of the lottery to refund the tickets from.
      */
-    function refundTickets(uint256 lotteryId) external { }
+    function refundTickets(uint256 lotteryId) external {
+        Lottery storage lottery = s_lotteries[lotteryId];
+        if (!lottery.exists) {
+            revert SimpleLottery__LotteryDoesNotExist();
+        }
+
+        if (lottery.winnerPaid) {
+            revert SimpleLottery__CannotGetRefund();
+        }
+
+        if (block.timestamp < lottery.deadline + lottery.pickWinnerDelay) {
+            revert SimpleLottery__WinnerHasNotBeenPickedYet();
+        }
+
+        // Winner can still read lottery.winningBlockNumber + 1
+        if (block.number < lottery.winningBlockNumber + 2) {
+            revert SimpleLottery__WinnerHasNotBeenPickedYet();
+        }
+
+        if (s_userLotteries[msg.sender][lotteryId] == false) {
+            revert SimpleLottery__UserDoesNotHaveTicketToRefund();
+        }
+
+        s_userLotteries[msg.sender][lotteryId] = false;
+        (bool success,) = payable(msg.sender).call{ value: lottery.ticketPrice }("");
+        if (!success) {
+            revert SimpleLottery__TransferFailed();
+        }
+        emit LotteryTicketRefunded(lotteryId, msg.sender);
+    }
 
     // EXTERNAL VIEW FUNCTIONS
     /**
